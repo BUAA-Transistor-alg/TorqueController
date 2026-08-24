@@ -4,7 +4,7 @@ AI生成的说明，看了一下基本没有问题，主要用RobotController就
 
 RoboMaster 云台偏航轴（yaw）力矩控制系统：上位机通过 USB 串口与电控 MCU、独立 IMU 通信，融合高频 IMU 与低频 MCU 数据，用 **MPC（模型预测控制）** 求解力矩指令，并通过 C++ / Python 两种方式驱动实车。
 
-核心：**`RobotController` 一体化封装类** —— 外部程序只需实例化一个类即可完成"通信 + 融合 + MPC 求解 + 后台 100Hz 发送"的全部控制闭环。
+核心：**`RobotController` 一体化封装类** —— 外部程序只需实例化一个类即可完成"通信 + 融合 + MPC 求解 + 后台发送（周期由 `mpc_loop_period` 指定，默认示例 100Hz）"的全部控制闭环。
 
 ---
 
@@ -42,16 +42,19 @@ bash ./build.sh            # 等价于 cmake + make -j$(nproc)
 // max_torque/max_torque_rate: 约束（N·m / N·m/s）
 // Q/R/Rd/max_iter: MPC 代价权重与迭代上限
 // integral_gain: yaw 力矩积分补偿比例系数（必须传参）
+// mpc_loop_period: McuMpcController 后台 loop 周期（秒，必须传参，无默认值；
+//                   0.01 = 100Hz）
 // mcu_linear_params: MCU 数据线性映射标定参数（默认构造为当前标定值）
 // sequence_mode: 是否选择序列模式（默认 false）
 RobotController rc(0.01, 20,
                    0.016541, 0.097297, 0.0321, 0.0,
                    1.0, 40.0, 5.0, 0.01, 0.1, 30,
                    0.01,
+                   0.01,
                    McuDataPreprocessor::LinearParams{});
 ```
 
-构造内部自动完成：建立 MCU/IMU 串口通信与融合滤波器（`RobotCommunication`）、建立 yaw MPC 封装（`McuMpcController`，含参考序列 + 求解 + **后台 100Hz 发送线程**，线程已自动启动）。
+构造内部自动完成：建立 MCU/IMU 串口通信与融合滤波器（`RobotCommunication`）、建立 yaw MPC 封装（`McuMpcController`，含参考序列 + 求解 + **后台发送线程**，周期 = `mpc_loop_period`，线程已自动启动）。
 
 ### 2.2 设置目标（直通 `McuMpcController::set`）
 
@@ -70,7 +73,7 @@ rc.set(true,   // auto_aim_enable
        false); // integral_enable（积分补偿开关）
 ```
 
-每次调用即更新目标，后台 100Hz 线程持续读取最新目标、求解 MPC 并发送 MCU。
+每次调用即更新目标，后台发送线程（周期 = `mpc_loop_period`，默认示例 100Hz）持续读取最新目标、求解 MPC 并发送 MCU。
 
 ### ⚠️ 重点：yaw 轴控制延后 dt_control × N
 
@@ -89,6 +92,7 @@ st.imu    // IMU 原始数据：gx/gy/gz、ax/ay/az、euler_yaw/pitch/roll、dt_
 st.fused  // 融合滤波器输出：yaw_pos（解卷绕多圈）、yaw_rate（高频）、chassis_yaw/pitch/roll、imu_yaw_unwrapped
 st.mpc    // MPC 状态：yaw_target_angle / yaw_target_velocity / yaw_torque / delayed_target
           //   + integral      （当前积分值，积分补偿累积量）
+          //   + loop_fps      （McuMpcController 后台 loop 真实帧率，滑动平均，帧/秒）
           //   + ref_sequence  （最新一次运算的目标位置序列，N 个）
           //   + pred_sequence （最新一次运算的预测位置序列，N 个，与 ref 逐点对应）
 ```
@@ -104,7 +108,7 @@ st.mpc    // MPC 状态：yaw_target_angle / yaw_target_velocity / yaw_torque / 
 int main() {
     RobotController rc(0.01, 20, 0.016541, 0.097297, 0.0321, 0.0,
                        1.0, 40.0, 5.0, 0.01, 0.1, 30,
-                       0.01, McuDataPreprocessor::LinearParams{});
+                       0.01, 0.01, McuDataPreprocessor::LinearParams{});
     // 等待融合就绪
     while (!rc.getState().fused.valid)
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -155,7 +159,7 @@ r.get_latest_data()          # MCU/IMU 原始数据
 r.get_fused_data()           # 融合滤波器输出（yaw_pos/yaw_rate/chassis/imu_yaw）
 r.send_to_mcu(pkt)           # 手动发送 McuSendPacket
 r.create_mpc(**kw)           # yaw MPC 求解器（返回发送值，不发送）
-r.create_mcu_mpc(**kw)       # 实车 MPC 控制封装（后台 100Hz 自动发送）
+r.create_mcu_mpc(**kw)       # 实车 MPC 控制封装（后台自动发送，周期默认 100Hz）
 ```
 
 ---
@@ -166,11 +170,13 @@ r.create_mcu_mpc(**kw)       # 实车 MPC 控制封装（后台 100Hz 自动发�
 include/
   communication/   # 通信头文件（协议/串口/预处理/融合滤波器）
   mpc/             # MPC 头文件（求解器 / yaw MPC / MCU 控制封装）
+  common/          # 通用工具（FrameRateCounter 帧率计数器）
   c_api/           # C 接口头文件
   RobotController.h  # 一体化封装类
 src/
   communication/   # 通信实现
   mpc/             # MPC 实现
+  common/          # 通用工具实现
   c_api/           # C 接口实现
   RobotController.cpp
   control_demo.cpp / test_serial.cpp / pitch_calibration.cpp   # 工具程序
@@ -189,7 +195,7 @@ MCU(低频) ──┐
             ├─► YawChassisFusion（IMU 高频积分 + MCU 校正）──► fused(yaw_pos/yaw_rate/chassis/imu_yaw)
 IMU(高频) ──┘
                                           │
-   target_yaw ──► RobotController::set ──► McuMpcController(后台100Hz)
+   target_yaw ──► RobotController::set ──► McuMpcController(后台loop,周期=mpc_loop_period)
                                           │  参考序列(延迟dt*N + 底盘修正) ──► MPC 求解
                                           ▼
                                    McuSendPacket ──► MCU 执行

@@ -4,7 +4,7 @@ RobotController::RobotController(double dt_control, int N,
                                  double J, double tau_c, double b, double tau_d,
                                  double max_torque, double max_torque_rate,
                                  double Q, double R, double Rd, int max_iter,
-                                 double integral_gain,
+                                 double integral_gain, double mpc_loop_period,
                                  const McuDataPreprocessor::LinearParams& mcu_linear_params,
                                  bool sequence_mode)
     : sequence_mode_(sequence_mode),
@@ -12,9 +12,9 @@ RobotController::RobotController(double dt_control, int N,
       mcu_mpc_(&comm_, dt_control, N,
                J, tau_c, b, tau_d,
                max_torque, max_torque_rate,
-               Q, R, Rd, max_iter, integral_gain)
+               Q, R, Rd, max_iter, integral_gain, mpc_loop_period)
 {
-    mcu_mpc_.start();   // 启动后台 100Hz 发送线程
+    mcu_mpc_.start();   // 启动后台发送线程（周期 = mpc_loop_period）
 }
 
 RobotController::~RobotController() {
@@ -79,6 +79,7 @@ RobotController::State RobotController::getState() {
     st.mpc.yaw_torque          = m.yaw_torque;
     st.mpc.delayed_target      = m.delayed_target;
     st.mpc.integral            = m.integral;
+    st.mpc.loop_fps            = m.loop_fps;
     st.mpc.ref_sequence        = m.ref_sequence;
     st.mpc.pred_sequence       = m.pred_sequence;
 

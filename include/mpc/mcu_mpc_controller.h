@@ -8,6 +8,7 @@
 #include <deque>
 #include "communication/Communications.hpp"
 #include "mpc/yaw_mpc_controller.h"
+#include "common/FrameRateCounter.h"
 
 // ============================================================================
 // McuMpcController — 实车 MCU 控制封装（yaw MPC + 发送参数维护 + 后台发送线程）
@@ -17,10 +18,13 @@
 //      YawMpcController 外，其余参数由本类自己维护（后台线程读取使用）。
 //      target_yaw 在设置时自动转换到与 imu_yaw_unwrapped 角度差最小的等效角
 //      （|差| ≤ π，且与 target_yaw 同向：target_adj ≡ target_yaw (mod 2π)）。
-// - 后台线程固定 100Hz：从本类取最新 target_yaw 调用 YawMpcController::step，
+// - 后台线程以构造传入的 loop_period（秒，默认 0.01 = 100Hz）为周期运行：
+//   从本类取最新 target_yaw 调用 YawMpcController::step，
 //   以 mpc 结果配合最新设置的发送参数构造 McuSendPacket 发送给 MCU。
 // - 线程循环：开始处取 steady_clock::now()，结束处
-//   sleep_until(start + 10ms)，不严格跟随绝对时间点，避免误差累计。
+//   sleep_until(start + loop_period)，不严格跟随绝对时间点，避免误差累计。
+// - 循环真实帧率由 FrameRateCounter 记录（滑动窗口 60 帧），最新值随
+//   State::loop_fps 返回。
 // - 设置参数与最新结果（last_state_）使用独立的锁保护。
 // ============================================================================
 class McuMpcController {
@@ -32,6 +36,7 @@ public:
         double yaw_torque = 0.0;
         double delayed_target = 0.0;
         double integral = 0.0;      // 当前积分值（积分补偿累积量）
+        double loop_fps = 0.0;      // 后台 loop 线程真实帧率（滑动平均，帧/秒）
         std::vector<double> ref_sequence;   // 本次参考（目标）序列（N 个）
         std::vector<double> pred_sequence;  // 本次预测位置序列（N 个）
     };
@@ -40,10 +45,11 @@ public:
                      double J, double tau_c, double b, double tau_d,
                      double max_torque, double max_torque_rate,
                      double Q, double R, double Rd, int max_iter,
-                     double integral_gain = 0.01);
+                     double integral_gain = 0.01,
+                     double loop_period = 0.01);
     ~McuMpcController();
 
-    void start();   // 启动后台 100Hz 发送线程（可重复调用，幂等）
+    void start();   // 启动后台发送线程（可重复调用，幂等）
     void stop();    // 停止并 join
 
     // 设置发送参数 + mpc 目标（线程安全）。
@@ -91,6 +97,9 @@ private:
     // 最新结果锁（显示线程读取）
     mutable std::mutex state_mtx_;
     State  last_state_;
+
+    double loop_period_ = 0.01;   // 后台 loop 周期（秒，构造传入）
+    FrameRateCounter fps_counter_;  // loop 真实帧率统计（滑动窗口 60 帧）
 
     std::thread thread_;
     std::atomic<bool> running_{false};

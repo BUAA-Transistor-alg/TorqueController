@@ -176,7 +176,7 @@ void yaw_mpc_destroy(YawMpcHandle_C handle);
 // 返回将要发送的 yaw_target_angle / yaw_target_velocity / yaw_torque（不发送）
 YawMpcStepResult_C yaw_mpc_step(YawMpcHandle_C handle, double target_yaw);
 
-// ── 实车 MCU 控制封装（设置 + 后台 100Hz 发送线程）──
+// ── 实车 MCU 控制封装（设置 + 后台发送线程，周期默认 100Hz）──
 typedef void* McuMpcHandle_C;
 
 typedef struct {
@@ -186,7 +186,7 @@ typedef struct {
     double delayed_target;      // 当前参考（延迟 dt*N 步的目标）
 } McuMpcState_C;
 
-// 创建封装并自动启动后台 100Hz 发送线程
+// 创建封装并自动启动后台发送线程（周期默认 100Hz）
 McuMpcHandle_C mcu_mpc_create(RobotCommHandle* comm, double dt_control, int N,
                               double J, double tau_c, double b, double tau_d,
                               double max_torque, double max_torque_rate,

@@ -3,7 +3,7 @@
 // - 参数与 pygame_control_mpc.py 一致
 // - 以 3s 周期正弦控制 target_yaw（±30°）与 pitch_target_angle（-10°~+20°），
 //   两者相位差 90°
-// - 内部：RobotController 建立通信 + 融合 + yaw MPC + 后台 100Hz 发送线程，
+// - 内部：RobotController 建立通信 + 融合 + yaw MPC + 后台发送线程（100Hz），
 //   外部只需 set() 设置目标即可
 // - 运行: ./build/control_demo，Ctrl+C 退出
 #include "RobotController.h"
@@ -58,14 +58,16 @@ int main() {
     printf("=== control_demo (RobotController) ===\n");
     printf("正弦周期 %.1fs: target_yaw ±30°, pitch_target -10°~+20°, 相位差 90°\n", PERIOD_S);
 
-    // 一体化控制封装：通信 + 融合滤波器 + yaw MPC + 后台 100Hz 发送线程
+    // 一体化控制封装：通信 + 融合滤波器 + yaw MPC + 后台发送线程
     // integral_gain: yaw 力矩积分补偿比例系数（默认 0.01）
+    // mpc_loop_period: McuMpcController 后台 loop 周期（秒，必须传参；0.01 = 100Hz）
     // mcu_linear_params 使用当前默认标定值（LinearParams{} 与默认构造等价）
     RobotController rc(DT_CTRL, MPC_PRED_N,
                        J, TAU_C, B_FRIC, TAU_D,
                        MAX_TORQUE, MAX_TORQUE_RATE,
                        Q, R, Rd, MAX_ITER,
                        /*integral_gain=*/0.01,
+                       /*mpc_loop_period=*/0.01,
                        McuDataPreprocessor::LinearParams{});
 
     // 等待融合数据就绪

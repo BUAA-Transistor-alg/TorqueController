@@ -8,12 +8,13 @@ McuMpcController::McuMpcController(RobotCommunication* comm, double dt_control, 
                                    double J, double tau_c, double b, double tau_d,
                                    double max_torque, double max_torque_rate,
                                    double Q, double R, double Rd, int max_iter,
-                                   double integral_gain)
+                                   double integral_gain, double loop_period)
     : comm_(comm),
       mpc_(comm, dt_control, N,
            J, tau_c, b, tau_d,
            max_torque, max_torque_rate,
-           Q, R, Rd, max_iter, integral_gain)
+           Q, R, Rd, max_iter, integral_gain),
+      loop_period_(loop_period)
 {}
 
 McuMpcController::~McuMpcController() {
@@ -158,9 +159,14 @@ void McuMpcController::loop() {
             last_state_.integral            = mpc_.integral();
             last_state_.ref_sequence        = res.ref_sequence;
             last_state_.pred_sequence       = res.pred_sequence;
+            last_state_.loop_fps            = fps_counter_.fps();
         }
 
-        // 循环结束处：等待到 start + 10ms（100Hz），不严格跟随绝对时间点
-        std::this_thread::sleep_until(start + std::chrono::milliseconds(10));
+        // 循环结束处：等待到 start + loop_period（默认 10ms = 100Hz），
+        // 不严格跟随绝对时间点
+        std::this_thread::sleep_until(start + std::chrono::duration<double>(loop_period_));
+
+        // 记录本帧真实耗时（含求解 + sleep），用于统计 loop 真实帧率
+        fps_counter_.tick();
     }
 }

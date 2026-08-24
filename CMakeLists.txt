@@ -43,6 +43,7 @@ set(MPC_SOURCES
     src/mpc/mpc_controller.cpp
     src/mpc/yaw_mpc_controller.cpp
     src/mpc/mcu_mpc_controller.cpp
+    src/common/FrameRateCounter.cpp
 )
 
 # ============================================================================

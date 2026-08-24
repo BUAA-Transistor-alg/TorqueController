@@ -194,7 +194,7 @@ YawMpcStepResult_C yaw_mpc_step(YawMpcHandle_C handle, double target_yaw) {
 }
 
 // ============================================================================
-// 实车 MCU 控制封装 C API（设置 + 后台 100Hz 发送线程）
+// 实车 MCU 控制封装 C API（设置 + 后台发送线程，周期默认 100Hz）
 // ============================================================================
 
 McuMpcHandle_C mcu_mpc_create(RobotCommHandle* comm, double dt_control, int N,
@@ -208,7 +208,7 @@ McuMpcHandle_C mcu_mpc_create(RobotCommHandle* comm, double dt_control, int N,
             J, tau_c, b, tau_d,
             max_torque, max_torque_rate,
             Q, R, Rd, max_iter);
-        ctl->start();   // 自动启动后台 100Hz 发送线程
+        ctl->start();   // 自动启动后台发送线程（周期默认 100Hz）
         return static_cast<McuMpcHandle_C>(ctl);
     } catch (...) {
         return nullptr;
