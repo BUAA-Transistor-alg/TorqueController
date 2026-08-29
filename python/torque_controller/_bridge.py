@@ -141,6 +141,15 @@ class McuMpcState(Structure):
         ("delayed_target",      c_double),
     ]
 
+
+class MpcStepResult(Structure):
+    """MPCController 一步求解结果（纯求解器，不依赖通信）"""
+    _fields_ = [
+        ("torque", c_double),   # 第一步控制力矩 (N·m)
+        ("theta",  c_double),   # 第一步预测位置 (rad)
+        ("omega",  c_double),   # 第一步预测速度 (rad/s)
+    ]
+
 # ── 函数签名 ──
 _lib.robot_comm_create.restype             = ctypes.c_void_p
 _lib.robot_comm_destroy.argtypes           = [ctypes.c_void_p]
@@ -181,6 +190,33 @@ _lib.mcu_mpc_step.argtypes = [
 ]
 _lib.mcu_mpc_get_state.argtypes = [ctypes.c_void_p]
 _lib.mcu_mpc_get_state.restype = McuMpcState
+
+_lib.mpc_controller_create.argtypes = [
+    c_double,                              # dt_control
+    c_double,                              # dt_sim
+    c_double, c_double, c_double, c_double,   # J, tau_c, b, tau_d
+    c_double, c_double,                    # max_torque, max_torque_rate
+    c_int,                                 # N
+    c_double, c_double, c_double,          # Q, R, Rd
+    c_int,                                 # max_iter
+]
+_lib.mpc_controller_create.restype = ctypes.c_void_p
+_lib.mpc_controller_destroy.argtypes = [ctypes.c_void_p]
+_lib.mpc_controller_step.argtypes = [
+    ctypes.c_void_p,                       # handle
+    c_double, c_double,                    # theta, omega
+    ctypes.POINTER(c_double), c_int,       # theta_ref, ref_len
+]
+_lib.mpc_controller_step.restype = MpcStepResult
+_lib.mpc_controller_get_last_ref.argtypes = [
+    ctypes.c_void_p, ctypes.POINTER(c_double), c_int,
+]
+_lib.mpc_controller_get_last_ref.restype = c_int
+_lib.mpc_controller_get_last_pred.argtypes = [
+    ctypes.c_void_p, ctypes.POINTER(c_double), c_int,
+]
+_lib.mpc_controller_get_last_pred.restype = c_int
+_lib.mpc_controller_reset.argtypes = [ctypes.c_void_p]
 
 
 class YawMpcController:
@@ -241,6 +277,60 @@ class McuMpcController:
     def __del__(self):
         if getattr(self, "_handle", None):
             _lib.mcu_mpc_destroy(self._handle)
+            self._handle = None
+
+
+class MPCController:
+    """MPCController（纯求解器，不依赖通信）的 Python 封装。
+
+    模型: J*dω/dt = τ - τ_c*tanh(λ·ω) - b·ω + τ_d（λ=100，dt_sim 通常等于 dt_control）。
+    每步调用 step(theta, omega, theta_ref)：theta/omega 为当前状态，
+    theta_ref 为未来 N 个控制周期的参考（目标）序列（长度 ≥ N），返回第一步
+    控制力矩与第一步预测状态。求解不发送任何数据，适合 Python 端仿真闭环。
+    """
+
+    def __init__(self, dt_control, dt_sim=None,
+                 J=0.024986, tau_c=0.122514, b=0.025648, tau_d=0.0,
+                 max_torque=1.0, max_torque_rate=40.0,
+                 N=20, Q=5.0, R=0.01, Rd=0.1, max_iter=30):
+        if dt_sim is None:
+            dt_sim = dt_control
+        self._handle = _lib.mpc_controller_create(
+            float(dt_control), float(dt_sim),
+            J, tau_c, b, tau_d,
+            max_torque, max_torque_rate,
+            int(N), Q, R, Rd, int(max_iter),
+        )
+        if not self._handle:
+            raise RuntimeError("mpc_controller_create() returned NULL")
+
+    def step(self, theta, omega, theta_ref) -> MpcStepResult:
+        """求解一步：theta_ref 为未来 N 个控制周期的参考序列（长度 ≥ N）。
+        返回 MpcStepResult(torque, theta, omega)。"""
+        ref = (c_double * len(theta_ref))(*[float(v) for v in theta_ref])
+        return _lib.mpc_controller_step(
+            self._handle, float(theta), float(omega), ref, len(theta_ref))
+
+    def get_last_ref(self):
+        """最近一次 step 的参考（目标）序列（N 个）"""
+        return self._get_sequence(_lib.mpc_controller_get_last_ref)
+
+    def get_last_pred(self):
+        """最近一次 step 的预测位置序列（N 个，不含当前状态）"""
+        return self._get_sequence(_lib.mpc_controller_get_last_pred)
+
+    def _get_sequence(self, fn):
+        buf = (c_double * 4096)()
+        n = fn(self._handle, buf, len(buf))
+        return list(buf[:n])
+
+    def reset(self):
+        """重置求解器内部状态（热启动序列、上次力矩、参考/预测缓存）"""
+        _lib.mpc_controller_reset(self._handle)
+
+    def __del__(self):
+        if getattr(self, "_handle", None):
+            _lib.mpc_controller_destroy(self._handle)
             self._handle = None
 
 

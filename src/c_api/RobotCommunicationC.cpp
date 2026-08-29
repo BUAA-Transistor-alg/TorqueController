@@ -2,10 +2,12 @@
 
 #include "c_api/RobotCommunicationC.h"
 #include "communication/Communications.hpp"
+#include "mpc/mpc_controller.h"
 #include "mpc/yaw_mpc_controller.h"
 #include "mpc/mcu_mpc_controller.h"
 #include <cstring>
 #include <new>
+#include <algorithm>
 
 // ============================================================================
 // 编译期验证：C 结构体与 C++ 结构体逐字段偏移一致
@@ -237,6 +239,68 @@ McuMpcState_C mcu_mpc_get_state(McuMpcHandle_C handle) {
     out.yaw_torque          = s.yaw_torque;
     out.delayed_target      = s.delayed_target;
     return out;
+}
+
+// ============================================================================
+// 直接暴露 MPCController（纯求解器，不依赖通信；供仿真/离线求解）
+// ============================================================================
+
+MpcControllerHandle_C mpc_controller_create(double dt_control, double dt_sim,
+                                            double J, double tau_c, double b, double tau_d,
+                                            double max_torque, double max_torque_rate,
+                                            int N, double Q, double R, double Rd, int max_iter) {
+    try {
+        return static_cast<MpcControllerHandle_C>(new MPCController(
+            dt_control, dt_sim, J, tau_c, b, tau_d,
+            max_torque, max_torque_rate, N, Q, R, Rd, max_iter));
+    } catch (...) {
+        return nullptr;
+    }
+}
+
+void mpc_controller_destroy(MpcControllerHandle_C handle) {
+    delete static_cast<MPCController*>(handle);
+}
+
+MpcStepResult_C mpc_controller_step(MpcControllerHandle_C handle,
+                                    double theta, double omega,
+                                    const double* theta_ref, int ref_len) {
+    MpcStepResult_C out{};
+    if (!handle || !theta_ref || ref_len <= 0) return out;
+    try {
+        std::vector<double> ref(theta_ref, theta_ref + ref_len);
+        auto r = static_cast<MPCController*>(handle)->step(theta, omega, ref);
+        out.torque = r.torque;
+        out.theta  = r.theta;
+        out.omega  = r.omega;
+    } catch (...) {
+        // 求解异常：返回 0 力矩与当前状态
+        out.torque = 0.0;
+        out.theta  = theta;
+        out.omega  = omega;
+    }
+    return out;
+}
+
+int mpc_controller_get_last_ref(MpcControllerHandle_C handle, double* out, int max_len) {
+    if (!handle || !out || max_len <= 0) return 0;
+    const auto& ref = static_cast<MPCController*>(handle)->lastRef();
+    int n = static_cast<int>(std::min<size_t>(ref.size(), static_cast<size_t>(max_len)));
+    std::memcpy(out, ref.data(), sizeof(double) * n);
+    return n;
+}
+
+int mpc_controller_get_last_pred(MpcControllerHandle_C handle, double* out, int max_len) {
+    if (!handle || !out || max_len <= 0) return 0;
+    const auto& pred = static_cast<MPCController*>(handle)->lastPred();
+    int n = static_cast<int>(std::min<size_t>(pred.size(), static_cast<size_t>(max_len)));
+    std::memcpy(out, pred.data(), sizeof(double) * n);
+    return n;
+}
+
+void mpc_controller_reset(MpcControllerHandle_C handle) {
+    if (!handle) return;
+    static_cast<MPCController*>(handle)->reset();
 }
 
 } // extern "C"

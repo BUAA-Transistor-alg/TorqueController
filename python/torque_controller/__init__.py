@@ -2,6 +2,7 @@
 
 from torque_controller._bridge import (
     RobotCommunication,
+    MPCController,
     RobotLatestData,
     McuSendPacket,
     McuReceivePacket,

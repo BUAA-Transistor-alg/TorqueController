@@ -78,6 +78,14 @@ public:
     const std::vector<double>& lastRef()  const { return last_ref_; }
     const std::vector<double>& lastPred() const { return last_pred_; }
 
+    // 重置求解器内部状态（热启动序列、上次力矩、参考/预测缓存），供仿真重启等场景使用
+    void reset() {
+        prev_u_seq_.assign(N_, 0.0);
+        prev_torque_ = 0.0;
+        last_ref_.clear();
+        last_pred_.clear();
+    }
+
 private:
     double dt_control_, dt_sim_;
     int    steps_per_control_;

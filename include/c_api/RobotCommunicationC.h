@@ -204,6 +204,39 @@ void mcu_mpc_step(McuMpcHandle_C handle,
 // 获取最新 mpc 结果（供显示）
 McuMpcState_C mcu_mpc_get_state(McuMpcHandle_C handle);
 
+// ── 直接暴露 MPCController（纯求解器，不依赖通信；供仿真/离线求解）──
+typedef void* MpcControllerHandle_C;
+
+typedef struct {
+    double torque;  // 第一步控制力矩 (N·m)
+    double theta;   // 第一步预测位置 (rad)
+    double omega;   // 第一步预测速度 (rad/s)
+} MpcStepResult_C;
+
+// 创建纯 MPC 求解器（dt_sim 通常与 dt_control 相同；模型:
+//   J*dω/dt = τ - τ_c*tanh(λ·ω) - b·ω + τ_d，λ=100）
+MpcControllerHandle_C mpc_controller_create(double dt_control, double dt_sim,
+                                            double J, double tau_c, double b, double tau_d,
+                                            double max_torque, double max_torque_rate,
+                                            int N, double Q, double R, double Rd, int max_iter);
+
+// 销毁求解器
+void mpc_controller_destroy(MpcControllerHandle_C handle);
+
+// 每步求解：theta/omega 为当前状态，theta_ref 为未来 N 个控制周期的参考序列
+// （长度需 ≥ N）；返回第一步控制力矩与第一步预测状态（不发送）
+MpcStepResult_C mpc_controller_step(MpcControllerHandle_C handle,
+                                    double theta, double omega,
+                                    const double* theta_ref, int ref_len);
+
+// 获取最近一次 step 的参考序列 / 预测位置序列（各 N 个，写入 out，
+// max_len 为 out 容量；返回实际写入的个数）
+int mpc_controller_get_last_ref(MpcControllerHandle_C handle, double* out, int max_len);
+int mpc_controller_get_last_pred(MpcControllerHandle_C handle, double* out, int max_len);
+
+// 重置求解器内部状态（热启动序列、上次力矩、参考/预测缓存）
+void mpc_controller_reset(MpcControllerHandle_C handle);
+
 #ifdef __cplusplus
 }
 #endif
