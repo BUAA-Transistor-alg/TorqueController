@@ -167,14 +167,16 @@ void robot_comm_stop(RobotCommHandle* handle) {
 YawMpcHandle_C yaw_mpc_create(RobotCommHandle* comm, double dt_control, int N,
                               double J, double tau_c, double b, double tau_d,
                               double max_torque, double max_torque_rate,
-                              double Q, double R, double Rd, int max_iter) {
+                              double Q, double R, double Rd, int max_iter,
+                              double smooth_eps) {
     if (!comm) return nullptr;
     try {
         return static_cast<YawMpcHandle_C>(new YawMpcController(
             &comm->impl, dt_control, N,
             J, tau_c, b, tau_d,
             max_torque, max_torque_rate,
-            Q, R, Rd, max_iter));
+            Q, R, Rd, max_iter,
+            /*integral_gain=*/0.01, smooth_eps));
     } catch (...) {
         return nullptr;
     }
@@ -202,14 +204,16 @@ YawMpcStepResult_C yaw_mpc_step(YawMpcHandle_C handle, double target_yaw) {
 McuMpcHandle_C mcu_mpc_create(RobotCommHandle* comm, double dt_control, int N,
                               double J, double tau_c, double b, double tau_d,
                               double max_torque, double max_torque_rate,
-                              double Q, double R, double Rd, int max_iter) {
+                              double Q, double R, double Rd, int max_iter,
+                              double smooth_eps) {
     if (!comm) return nullptr;
     try {
         auto* ctl = new McuMpcController(
             &comm->impl, dt_control, N,
             J, tau_c, b, tau_d,
             max_torque, max_torque_rate,
-            Q, R, Rd, max_iter);
+            Q, R, Rd, max_iter,
+            /*integral_gain=*/0.01, /*loop_period=*/0.01, smooth_eps);
         ctl->start();   // 自动启动后台发送线程（周期默认 100Hz）
         return static_cast<McuMpcHandle_C>(ctl);
     } catch (...) {
@@ -248,11 +252,12 @@ McuMpcState_C mcu_mpc_get_state(McuMpcHandle_C handle) {
 MpcControllerHandle_C mpc_controller_create(double dt_control, double dt_sim,
                                             double J, double tau_c, double b, double tau_d,
                                             double max_torque, double max_torque_rate,
-                                            int N, double Q, double R, double Rd, int max_iter) {
+                                            int N, double Q, double R, double Rd, int max_iter,
+                                            double smooth_eps) {
     try {
         return static_cast<MpcControllerHandle_C>(new MPCController(
             dt_control, dt_sim, J, tau_c, b, tau_d,
-            max_torque, max_torque_rate, N, Q, R, Rd, max_iter));
+            max_torque, max_torque_rate, N, Q, R, Rd, max_iter, smooth_eps));
     } catch (...) {
         return nullptr;
     }

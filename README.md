@@ -41,6 +41,10 @@ bash ./build.sh            # 等价于 cmake + make -j$(nproc)
 // J/tau_c/b/tau_d: 辨识参数（params/1/Identified_parameters.txt，tau_d 通常置 0）
 // max_torque/max_torque_rate: 约束（N·m / N·m/s）
 // Q/R/Rd/max_iter: MPC 代价权重与迭代上限
+//   （目标函数: 位置跟踪误差 = Q·sqrt(err²+smooth_eps)（平滑绝对值），
+//    控制量 = R·u²、力矩变化率 = Rd·Δu²（均方误差））
+// smooth_eps: 位置误差平滑绝对值常数 a（sqrt(err²+a) 中的 a，很小的正数，
+//             默认 1e-6；可省略）
 // integral_gain: yaw 力矩积分补偿比例系数（必须传参）
 // mpc_loop_period: McuMpcController 后台 loop 周期（秒，必须传参，无默认值；
 //                   0.01 = 100Hz）
@@ -52,6 +56,8 @@ RobotController rc(0.01, 20,
                    0.01,
                    0.01,
                    McuDataPreprocessor::LinearParams{});
+// 如需调整平滑绝对值常数 a（默认 1e-6）:
+// RobotController rc(..., McuDataPreprocessor::LinearParams{}, false, 1e-6);
 ```
 
 构造内部自动完成：建立 MCU/IMU 串口通信与融合滤波器（`RobotCommunication`）、建立 yaw MPC 封装（`McuMpcController`，含参考序列 + 求解 + **后台发送线程**，周期 = `mpc_loop_period`，线程已自动启动）。

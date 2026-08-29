@@ -46,7 +46,8 @@ public:
                      double max_torque, double max_torque_rate,
                      double Q, double R, double Rd, int max_iter,
                      double integral_gain = 0.01,
-                     double loop_period = 0.01);
+                     double loop_period = 0.01,
+                     double smooth_eps = 1e-6);
     ~McuMpcController();
 
     void start();   // 启动后台发送线程（可重复调用，幂等）

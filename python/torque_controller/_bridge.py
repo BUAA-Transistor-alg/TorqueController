@@ -173,6 +173,7 @@ _lib.yaw_mpc_create.argtypes = [
     c_double, c_double,                    # max_torque, max_torque_rate
     c_double, c_double, c_double,          # Q, R, Rd
     c_int,                                 # max_iter
+    c_double,                              # smooth_eps（位置误差平滑绝对值常数 a）
 ]
 _lib.yaw_mpc_create.restype = ctypes.c_void_p
 _lib.yaw_mpc_destroy.argtypes = [ctypes.c_void_p]
@@ -199,6 +200,7 @@ _lib.mpc_controller_create.argtypes = [
     c_int,                                 # N
     c_double, c_double, c_double,          # Q, R, Rd
     c_int,                                 # max_iter
+    c_double,                              # smooth_eps（位置误差平滑绝对值常数 a）
 ]
 _lib.mpc_controller_create.restype = ctypes.c_void_p
 _lib.mpc_controller_destroy.argtypes = [ctypes.c_void_p]
@@ -225,12 +227,13 @@ class YawMpcController:
     def __init__(self, comm_handle, dt_control, N,
                  J, tau_c, b, tau_d=0.0,
                  max_torque=1.0, max_torque_rate=10.0,
-                 Q=5.0, R=0.01, Rd=0.1, max_iter=30):
+                 Q=5.0, R=0.01, Rd=0.1, max_iter=30,
+                 smooth_eps=1e-6):
         self._handle = _lib.yaw_mpc_create(
             comm_handle, float(dt_control), int(N),
             J, tau_c, b, tau_d,
             max_torque, max_torque_rate,
-            Q, R, Rd, int(max_iter),
+            Q, R, Rd, int(max_iter), float(smooth_eps),
         )
         if not self._handle:
             raise RuntimeError("yaw_mpc_create() returned NULL")
@@ -251,12 +254,13 @@ class McuMpcController:
     def __init__(self, comm_handle, dt_control, N,
                  J, tau_c, b, tau_d=0.0,
                  max_torque=1.0, max_torque_rate=10.0,
-                 Q=5.0, R=0.01, Rd=0.1, max_iter=30):
+                 Q=5.0, R=0.01, Rd=0.1, max_iter=30,
+                 smooth_eps=1e-6):
         self._handle = _lib.mcu_mpc_create(
             comm_handle, float(dt_control), int(N),
             J, tau_c, b, tau_d,
             max_torque, max_torque_rate,
-            Q, R, Rd, int(max_iter),
+            Q, R, Rd, int(max_iter), float(smooth_eps),
         )
         if not self._handle:
             raise RuntimeError("mcu_mpc_create() returned NULL")
@@ -284,6 +288,8 @@ class MPCController:
     """MPCController（纯求解器，不依赖通信）的 Python 封装。
 
     模型: J*dω/dt = τ - τ_c*tanh(λ·ω) - b·ω + τ_d（λ=100，dt_sim 通常等于 dt_control）。
+    目标函数: 位置跟踪误差用平滑绝对值 sqrt(err²+a)（smooth_eps 参数，很小的正数），
+    控制量（R）与力矩变化率（Rd）惩罚保持均方误差。
     每步调用 step(theta, omega, theta_ref)：theta/omega 为当前状态，
     theta_ref 为未来 N 个控制周期的参考（目标）序列（长度 ≥ N），返回第一步
     控制力矩与第一步预测状态。求解不发送任何数据，适合 Python 端仿真闭环。
@@ -292,14 +298,15 @@ class MPCController:
     def __init__(self, dt_control, dt_sim=None,
                  J=0.024986, tau_c=0.122514, b=0.025648, tau_d=0.0,
                  max_torque=1.0, max_torque_rate=40.0,
-                 N=20, Q=5.0, R=0.01, Rd=0.1, max_iter=30):
+                 N=20, Q=5.0, R=0.01, Rd=0.1, max_iter=30,
+                 smooth_eps=1e-6):
         if dt_sim is None:
             dt_sim = dt_control
         self._handle = _lib.mpc_controller_create(
             float(dt_control), float(dt_sim),
             J, tau_c, b, tau_d,
             max_torque, max_torque_rate,
-            int(N), Q, R, Rd, int(max_iter),
+            int(N), Q, R, Rd, int(max_iter), float(smooth_eps),
         )
         if not self._handle:
             raise RuntimeError("mpc_controller_create() returned NULL")

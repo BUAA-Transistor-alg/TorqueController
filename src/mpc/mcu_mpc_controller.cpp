@@ -8,12 +8,13 @@ McuMpcController::McuMpcController(RobotCommunication* comm, double dt_control, 
                                    double J, double tau_c, double b, double tau_d,
                                    double max_torque, double max_torque_rate,
                                    double Q, double R, double Rd, int max_iter,
-                                   double integral_gain, double loop_period)
+                                   double integral_gain, double loop_period,
+                                   double smooth_eps)
     : comm_(comm),
       mpc_(comm, dt_control, N,
            J, tau_c, b, tau_d,
            max_torque, max_torque_rate,
-           Q, R, Rd, max_iter, integral_gain),
+           Q, R, Rd, max_iter, integral_gain, smooth_eps),
       loop_period_(loop_period)
 {}
 

@@ -37,6 +37,8 @@ constexpr double Q = 5.0;
 constexpr double R = 0.01;
 constexpr double Rd = 0.1;
 constexpr int    MAX_ITER = 30;
+// 位置跟踪误差平滑绝对值常数 a（代价 = Q*sqrt(err²+a)；很小正数）
+constexpr double SMOOTH_EPS = 1e-6;
 
 // ── 正弦目标 ──
 // target_yaw: ±30° 正弦
@@ -68,7 +70,9 @@ int main() {
                        Q, R, Rd, MAX_ITER,
                        /*integral_gain=*/0.01,
                        /*mpc_loop_period=*/0.01,
-                       McuDataPreprocessor::LinearParams{});
+                       McuDataPreprocessor::LinearParams{},
+                       /*sequence_mode=*/false,
+                       /*smooth_eps=*/SMOOTH_EPS);
 
     // 等待融合数据就绪
     printf("等待融合数据就绪...\n");

@@ -98,7 +98,8 @@ public:
     // integral_gain：yaw 力矩积分补偿比例系数（必须传参）；
     // mpc_loop_period：McuMpcController 后台 loop 周期（秒，必须传参，无默认值）；
     // mcu_linear_params：MCU 数据线性映射标定参数（默认构造为当前标定值）；
-    // sequence_mode=true 选择序列模式）
+    // sequence_mode=true 选择序列模式；
+    // smooth_eps：位置跟踪误差平滑绝对值常数 a（代价 = Q*sqrt(err²+a)，默认 1e-6））
     RobotController(double dt_control, int N,
                     double J, double tau_c, double b, double tau_d,
                     double max_torque, double max_torque_rate,
@@ -106,7 +107,8 @@ public:
                     double integral_gain,
                     double mpc_loop_period,
                     const McuDataPreprocessor::LinearParams& mcu_linear_params,
-                    bool sequence_mode = false);
+                    bool sequence_mode = false,
+                    double smooth_eps = 1e-6);
     ~RobotController();
 
     // 统一获取：mcu/imu 原始 + 融合输出 + mpc 状态（含参考/预测序列与积分值）

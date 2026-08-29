@@ -164,10 +164,12 @@ typedef struct {
 } YawMpcStepResult_C;
 
 // 创建 yaw MPC 求解器（comm: robot_comm_create 返回的句柄）
+// smooth_eps: 位置跟踪误差平滑绝对值常数 a（代价 = Q*sqrt(err²+a)，很小正数）
 YawMpcHandle_C yaw_mpc_create(RobotCommHandle* comm, double dt_control, int N,
                               double J, double tau_c, double b, double tau_d,
                               double max_torque, double max_torque_rate,
-                              double Q, double R, double Rd, int max_iter);
+                              double Q, double R, double Rd, int max_iter,
+                              double smooth_eps);
 
 // 销毁
 void yaw_mpc_destroy(YawMpcHandle_C handle);
@@ -187,10 +189,12 @@ typedef struct {
 } McuMpcState_C;
 
 // 创建封装并自动启动后台发送线程（周期默认 100Hz）
+// smooth_eps: 位置跟踪误差平滑绝对值常数 a（代价 = Q*sqrt(err²+a)，很小正数）
 McuMpcHandle_C mcu_mpc_create(RobotCommHandle* comm, double dt_control, int N,
                               double J, double tau_c, double b, double tau_d,
                               double max_torque, double max_torque_rate,
-                              double Q, double R, double Rd, int max_iter);
+                              double Q, double R, double Rd, int max_iter,
+                              double smooth_eps);
 
 // 销毁（停止并 join 后台线程）
 void mcu_mpc_destroy(McuMpcHandle_C handle);
@@ -215,10 +219,12 @@ typedef struct {
 
 // 创建纯 MPC 求解器（dt_sim 通常与 dt_control 相同；模型:
 //   J*dω/dt = τ - τ_c*tanh(λ·ω) - b·ω + τ_d，λ=100）
+// smooth_eps: 位置跟踪误差平滑绝对值常数 a（代价 = Q*sqrt(err²+a)，很小正数）
 MpcControllerHandle_C mpc_controller_create(double dt_control, double dt_sim,
                                             double J, double tau_c, double b, double tau_d,
                                             double max_torque, double max_torque_rate,
-                                            int N, double Q, double R, double Rd, int max_iter);
+                                            int N, double Q, double R, double Rd, int max_iter,
+                                            double smooth_eps);
 
 // 销毁求解器
 void mpc_controller_destroy(MpcControllerHandle_C handle);

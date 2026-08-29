@@ -59,6 +59,11 @@ TAU_D   = 0.0            # tau_d 设为 0
 MAX_TORQUE      = 1.0    # 最大力矩 (N·m)
 MAX_TORQUE_RATE = 40.0   # 最大力矩变化率 (N·m/s)
 
+# ================== MPC 目标函数 ==================
+# 位置跟踪误差: 平滑绝对值 sqrt(err²+a)（a 很小正数，err≈0 附近连续可导，
+# 大误差近似 |err|，不再按平方放大）；控制量与力矩变化率仍为均方误差
+ABS_SMOOTH_EPS  = 1e-6
+
 # ================== 波形图参数（与 pygame_control_mpc.py 一致）==================
 WAVE_LEFT   = 80
 WAVE_RIGHT  = 1840
@@ -327,6 +332,7 @@ def main():
         J=J, tau_c=TAU_C, b=B_FRIC, tau_d=TAU_D,
         max_torque=MAX_TORQUE, max_torque_rate=MAX_TORQUE_RATE,
         Q=5.0, R=0.01, Rd=0.1, max_iter=30,
+        smooth_eps=ABS_SMOOTH_EPS,
     )
 
     # ── 可选：yaw 目标平滑（与 pygame_control_mpc.py 相同的 TrajectoryPlanner）──

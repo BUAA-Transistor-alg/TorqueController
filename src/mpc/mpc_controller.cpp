@@ -34,11 +34,16 @@ public:
         mpc_->predictTrajectory(T(theta0_), T(omega0_), u, theta_pred, omega_pred);
 
         int idx = 0;
-        // 位置跟踪误差：直接相减，不归一化（多圈连续语义，
-        // theta_pred[k] 为 k+1 个控制周期后的预测，ref[k] 对应参考）
+        // 位置跟踪误差：平滑绝对值代价 Q * sqrt(err² + a)（a = smooth_eps 很小正数），
+        // 避免 |err| 在 0 附近不可导且对大误差不再按平方放大。
+        // 残差取 sqrt(Q) * (err² + a)^(1/4)，残差平方后恰为该代价：
+        //   [sqrt(Q) * (err²+a)^(1/4)]² = Q * sqrt(err² + a)
+        // 不归一化（多圈连续语义，theta_pred[k] 为 k+1 个控制周期后的预测，
+        // ref[k] 对应参考）
         for (int k = 0; k < N; ++k) {
             T err = theta_pred[k] - theta_ref_[k];
-            residuals[idx++] = std::sqrt(mpc_->Q()) * err;
+            T smooth_abs = sqrt(sqrt(err * err + T(mpc_->smoothEps())));
+            residuals[idx++] = std::sqrt(mpc_->Q()) * smooth_abs;
         }
         // 控制量惩罚
         for (int k = 0; k < N; ++k) {
@@ -63,11 +68,13 @@ private:
 MPCController::MPCController(double dt_control, double dt_sim,
                              double J, double tau_c, double b, double tau_d,
                              double max_torque, double max_torque_rate,
-                             int N, double Q, double R, double Rd, int max_iter)
+                             int N, double Q, double R, double Rd, int max_iter,
+                             double smooth_eps)
     : dt_control_(dt_control), dt_sim_(dt_sim),
       J_(J), tau_c_(tau_c), b_(b), tau_d_(tau_d),
       max_torque_(max_torque), max_torque_rate_(max_torque_rate),
-      N_(N), Q_(Q), R_(R), Rd_(Rd), max_iter_(max_iter)
+      N_(N), Q_(Q), R_(R), Rd_(Rd), max_iter_(max_iter),
+      smooth_eps_(smooth_eps)
 {
     double ratio = dt_control_ / dt_sim_;
     steps_per_control_ = static_cast<int>(std::round(ratio));

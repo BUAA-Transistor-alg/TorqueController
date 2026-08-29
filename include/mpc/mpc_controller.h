@@ -20,6 +20,10 @@
 //   ref[i] 对应预测 theta_pred[i+1]；位置误差直接相减（不归一化到 (-π, π]），
 //   保留圈数语义——目标与当前状态差多少圈就跟踪多少圈。
 //
+// 目标函数: 位置跟踪误差用平滑绝对值 sqrt(err² + a)（a = smooth_eps，很小的正数，
+//   默认 1e-6；|err| ≫ √a 时 ≈ |err|，err = 0 附近连续可导），
+//   控制量（R）与力矩变化率（Rd）惩罚保持均方误差。
+//
 // 求导方式: 动力学/代价函数均模板化（T = double 或 ceres::Jet），
 //   由 Ceres DynamicAutoDiffCostFunction 自动求导（链式法则），
 //   替代原先的有限差分数值微分。
@@ -35,7 +39,8 @@ public:
     MPCController(double dt_control, double dt_sim,
                   double J, double tau_c, double b, double tau_d,
                   double max_torque, double max_torque_rate,
-                  int N, double Q, double R, double Rd, int max_iter);
+                  int N, double Q, double R, double Rd, int max_iter,
+                  double smooth_eps = 1e-6);
 
     Result step(double theta, double omega, const std::vector<double>& theta_ref);
 
@@ -73,6 +78,8 @@ public:
     double maxTorque()  const { return max_torque_; }
     double rateStep()   const { return rate_step_; }
     double prevTorque() const { return prev_torque_; }
+    // 位置跟踪误差平滑绝对值常数 a：代价 = Q * sqrt(err² + a)
+    double smoothEps()  const { return smooth_eps_; }
 
     // 最新一次 step 的参考（目标）序列（N 个）与预测位置序列（N 个，不含当前状态）
     const std::vector<double>& lastRef()  const { return last_ref_; }
@@ -95,6 +102,7 @@ private:
     int    N_;
     double Q_, R_, Rd_;
     int    max_iter_;
+    double smooth_eps_;   // 位置误差平滑绝对值常数 a（sqrt(err² + a)），很小的正数
 
     // 上一次最优控制序列（用于热启动）
     std::vector<double> prev_u_seq_;

@@ -38,11 +38,13 @@ public:
     // dt_control: 控制周期（MPC 的 dt_control 与 dt_sim 相同）
     // N: 预测步数
     // integral_gain: 积分比例系数（默认 0.01）
+    // smooth_eps: 位置跟踪误差平滑绝对值常数 a（代价 = Q*sqrt(err²+a)，默认 1e-6）
     YawMpcController(RobotCommunication* comm, double dt_control, int N,
                      double J, double tau_c, double b, double tau_d,
                      double max_torque, double max_torque_rate,
                      double Q, double R, double Rd, int max_iter,
-                     double integral_gain = 0.01);
+                     double integral_gain = 0.01,
+                     double smooth_eps = 1e-6);
 
     // 每步调用：内部读状态、维护延迟参考序列、求解；返回发送所需值（不发送）
     // integral_enable=true 时启用积分补偿（第一次 step 无上一步预测，不计算）：
