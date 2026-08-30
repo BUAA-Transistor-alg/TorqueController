@@ -60,6 +60,8 @@ void McuMpcController::set(bool auto_aim_enable, bool yaw_torque_only_mode,
     target_yaw_seq_.clear();
     pitch_seq_.clear();
     fire_seq_.clear();
+    // 重置"距上一次 set 已过去的 loop 次数"
+    ticks_since_set_ = 0;
 }
 
 // 序列版 set：不截断，三个序列各自独立存储；
@@ -89,6 +91,8 @@ void McuMpcController::set(bool auto_aim_enable, bool yaw_torque_only_mode,
     }
     pitch_seq_.assign(pitch_seq.begin(), pitch_seq.end());
     fire_seq_.assign(fire_seq.begin(), fire_seq.end());
+    // 重置"距上一次 set 已过去的 loop 次数"
+    ticks_since_set_ = 0;
 }
 
 McuMpcController::State McuMpcController::state() const {
@@ -161,13 +165,16 @@ void McuMpcController::loop() {
             last_state_.ref_sequence        = res.ref_sequence;
             last_state_.pred_sequence       = res.pred_sequence;
             last_state_.loop_fps            = fps_counter_.fps();
+            last_state_.ticks_since_set     = ticks_since_set_.load();
         }
 
         // 循环结束处：等待到 start + loop_period（默认 10ms = 100Hz），
         // 不严格跟随绝对时间点
         std::this_thread::sleep_until(start + std::chrono::duration<double>(loop_period_));
 
-        // 记录本帧真实耗时（含求解 + sleep），用于统计 loop 真实帧率
+        // 记录本帧真实耗时（含求解 + sleep），用于统计 loop 真实帧率；
+        // 距上一次 set 已过去的 loop 次数 +1（每次循环完成计一个时间点）
         fps_counter_.tick();
+        ++ticks_since_set_;
     }
 }

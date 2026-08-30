@@ -4,6 +4,7 @@
 #include <vector>
 #include <thread>
 #include <atomic>
+#include <cstdint>
 #include <mutex>
 #include <deque>
 #include "communication/Communications.hpp"
@@ -37,6 +38,7 @@ public:
         double delayed_target = 0.0;
         double integral = 0.0;      // 当前积分值（积分补偿累积量）
         double loop_fps = 0.0;      // 后台 loop 线程真实帧率（滑动平均，帧/秒）
+        uint64_t ticks_since_set = 0;   // 距上一次 set() 已过去的后台 loop 次数（loop 每循环一次 +1）
         std::vector<double> ref_sequence;   // 本次参考（目标）序列（N 个）
         std::vector<double> pred_sequence;  // 本次预测位置序列（N 个）
     };
@@ -101,6 +103,10 @@ private:
 
     double loop_period_ = 0.01;   // 后台 loop 周期（秒，构造传入）
     FrameRateCounter fps_counter_;  // loop 真实帧率统计（滑动窗口 60 帧）
+
+    // 距上一次 set() 已过去的后台 loop 次数（set 时清零，loop 每循环一次 +1；
+    // 原子计数：set 线程写、loop 线程读写）
+    std::atomic<uint64_t> ticks_since_set_{0};
 
     std::thread thread_;
     std::atomic<bool> running_{false};

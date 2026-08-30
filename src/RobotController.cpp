@@ -80,6 +80,7 @@ RobotController::State RobotController::getState() {
     st.mpc.delayed_target      = m.delayed_target;
     st.mpc.integral            = m.integral;
     st.mpc.loop_fps            = m.loop_fps;
+    st.mpc.ticks_since_set     = m.ticks_since_set;
     st.mpc.ref_sequence        = m.ref_sequence;
     st.mpc.pred_sequence       = m.pred_sequence;
 

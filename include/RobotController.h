@@ -77,6 +77,7 @@ public:
         double delayed_target = 0.0;        // 当前参考（延迟 dt*N 步的目标）
         double integral = 0.0;              // 当前积分值（积分补偿累积量）
         double loop_fps = 0.0;              // McuMpcController 后台 loop 真实帧率（帧/秒）
+        uint64_t ticks_since_set = 0;       // 距上一次 mcu_mpc_.set() 已过去的后台 loop 次数（loop 每循环一次 +1）
         std::vector<double> ref_sequence;   // 最新一次运算的目标位置序列（N 个）
         std::vector<double> pred_sequence;  // 最新一次运算的预测位置序列（N 个，不含当前）
     };
