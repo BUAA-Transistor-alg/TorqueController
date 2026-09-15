@@ -12,7 +12,7 @@ collect_sysid_data.py — 系统辨识数据采集
 import sys, os, math, time
 import numpy as np
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from torque_controller import RobotCommunication, McuSendPacket
+from torque_controller import TcsRobotCommunication, TcsMcuSendPacket
 from scripts.trajectory_planner import TrajectoryPlanner, StepRefinementWrapper
 
 # ============================================================================
@@ -151,7 +151,7 @@ def main():
     all_targets = load_all_targets()
 
     print("Connecting to robot...")
-    robot = RobotCommunication()
+    robot = TcsRobotCommunication()
     print("Waiting for data...")
     while True:
         data = robot.get_latest_data()
@@ -177,7 +177,7 @@ def main():
 
     def send_zero():
         torque = limit_torque(0.0, last_torque[0])
-        pkt = McuSendPacket(auto_aim_enable=1, pitch_target_angle=0.0,
+        pkt = TcsMcuSendPacket(auto_aim_enable=1, pitch_target_angle=0.0,
                             yaw_torque_only_mode=1, yaw_target_angle=0.0,
                             yaw_target_velocity=0.0, yaw_torque=torque, fire=0)
         robot.send_to_mcu(pkt)
@@ -203,7 +203,7 @@ def main():
             else:
                 torque = 0.0
             torque = limit_torque(torque, last_torque[0])
-            pkt = McuSendPacket(auto_aim_enable=1, pitch_target_angle=0.0,
+            pkt = TcsMcuSendPacket(auto_aim_enable=1, pitch_target_angle=0.0,
                                 yaw_torque_only_mode=1, yaw_target_angle=0.0,
                                 yaw_target_velocity=0.0, yaw_torque=torque, fire=0)
             robot.send_to_mcu(pkt)
@@ -296,7 +296,7 @@ def main():
                 else:
                     obs_yaw = 0.0; obs_gz = 0.0; torque = 0.0
                 torque = limit_torque(torque, last_torque[0])
-                pkt = McuSendPacket(auto_aim_enable=1, pitch_target_angle=0.0,
+                pkt = TcsMcuSendPacket(auto_aim_enable=1, pitch_target_angle=0.0,
                                     yaw_torque_only_mode=1, yaw_target_angle=0.0,
                                     yaw_target_velocity=0.0, yaw_torque=torque, fire=0)
                 robot.send_to_mcu(pkt)

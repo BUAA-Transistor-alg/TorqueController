@@ -1,10 +1,12 @@
-#ifndef YAW_MPC_CONTROLLER_H
-#define YAW_MPC_CONTROLLER_H
+#ifndef TCS_YAW_MPC_CONTROLLER_H
+#define TCS_YAW_MPC_CONTROLLER_H
 
 #include <deque>
 #include <vector>
-#include "communication/Communications.hpp"
-#include "mpc/mpc_controller.h"
+#include "tcs/communication/Communications.hpp"
+#include "tcs/mpc/mpc_controller.h"
+
+namespace tcs {
 
 // ============================================================================
 // YawMpcController — 实车 yaw 轴 MPC 求解封装（参考序列 + 求解，不发送）
@@ -76,4 +78,6 @@ private:
     bool   has_prev_pred_ = false; // 是否已有上一步预测（第一次 step 不计算）
 };
 
-#endif // YAW_MPC_CONTROLLER_H
+
+} // namespace tcs
+#endif // TCS_YAW_MPC_CONTROLLER_H

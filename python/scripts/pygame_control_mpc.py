@@ -2,7 +2,7 @@
 pygame_control_mpc.py — 使用 pygame 鼠标控制 yaw（MPC）/ pitch 的实车控制程序
                    结构仿照 pygame_control.py（同时获取和绘制 yaw 与 pitch）
 
-- yaw: MPC 力矩控制（闭环完全在 C++：McuMpcController 后台 100Hz 线程求解并发送）。
+- yaw: MPC 力矩控制（闭环完全在 C++：tcs::McuMpcController 后台 100Hz 线程求解并发送）。
        目标 yaw 可选用 TrajectoryPlanner + StepRefinementWrapper 平滑（USE_PLANNER）；
        目标延迟 dt*N 步由 C++ 内部维护（delayed_target）。
        目标 yaw 速度 = mpc 解算的 yaw_target_velocity；Torque = mpc 的 yaw_torque。
@@ -16,7 +16,7 @@ pygame_control_mpc.py — 使用 pygame 鼠标控制 yaw（MPC）/ pitch 的实�
 
 import sys, os, math, time
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from torque_controller import RobotCommunication
+from torque_controller import TcsRobotCommunication
 from scripts.trajectory_planner import TrajectoryPlanner, StepRefinementWrapper
 
 import pygame
@@ -252,7 +252,7 @@ def main():
     font = pygame.font.Font(None, 26)
 
     # 通信 + 融合滤波器
-    robot = RobotCommunication()
+    robot = TcsRobotCommunication()
     print("Waiting for fused data (IMU + MCU yaw)...")
     while True:
         fused = robot.get_fused_data()

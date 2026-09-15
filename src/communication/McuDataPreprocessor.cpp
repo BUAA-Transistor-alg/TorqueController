@@ -1,5 +1,7 @@
-#include "communication/McuDataPreprocessor.h"
+#include "tcs/communication/McuDataPreprocessor.h"
 #include <cmath>
+
+namespace tcs {
 
 mcu::SendPacket McuDataPreprocessor::processSend(const mcu::SendPacket& packet) {
     mcu::SendPacket result = packet;
@@ -15,3 +17,5 @@ mcu::ReceivePacket McuDataPreprocessor::processReceive(const mcu::ReceivePacket&
     result.yaw_angle   = packet.yaw_angle;// * YAW_SCALE;                              // 编码器值 → 弧度
     return result;
 }
+
+} // namespace tcs

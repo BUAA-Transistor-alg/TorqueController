@@ -18,7 +18,7 @@ pygame_control.py — 使用 pygame 鼠标控制 yaw / pitch 的演示程序
 
 import sys, os, math, time
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from torque_controller import RobotCommunication, McuSendPacket, ImuSendPacket
+from torque_controller import TcsRobotCommunication, TcsMcuSendPacket, TcsImuSendPacket
 from scripts.trajectory_planner import TrajectoryPlanner, StepRefinementWrapper
 
 import pygame
@@ -242,7 +242,7 @@ def main():
     clock = pygame.time.Clock()
 
     # 通信
-    robot = RobotCommunication()
+    robot = TcsRobotCommunication()
     print("Waiting for IMU & MCU data...")
     while True:
         data = robot.get_latest_data()
@@ -332,7 +332,7 @@ def main():
         yaw_torque = 0.0 # math.tanh((target_yaw - data.mcu_packet.yaw_angle))
 
         # ── 发送 ──
-        pkt = McuSendPacket(
+        pkt = TcsMcuSendPacket(
             auto_aim_enable=1,
             pitch_target_angle=target_pitch,
             yaw_torque_only_mode=0,

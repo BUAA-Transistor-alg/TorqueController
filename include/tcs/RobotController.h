@@ -1,11 +1,13 @@
-#ifndef ROBOT_CONTROLLER_H
-#define ROBOT_CONTROLLER_H
+#ifndef TCS_ROBOT_CONTROLLER_H
+#define TCS_ROBOT_CONTROLLER_H
 
 #include <vector>
 #include <cstdint>
 #include <stdexcept>
-#include "communication/Communications.hpp"
-#include "mpc/mcu_mpc_controller.h"
+#include "tcs/communication/Communications.hpp"
+#include "tcs/mpc/mcu_mpc_controller.h"
+
+namespace tcs {
 
 // ============================================================================
 // RobotController — 一体化控制封装
@@ -139,4 +141,6 @@ private:
     McuMpcController   mcu_mpc_;
 };
 
-#endif // ROBOT_CONTROLLER_H
+
+} // namespace tcs
+#endif // TCS_ROBOT_CONTROLLER_H

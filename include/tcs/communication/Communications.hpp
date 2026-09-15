@@ -3,16 +3,18 @@
 // McuCommunication : 与电控（MCU）通信，CRC8，前导 0x42 0x52 0x02
 // ImuCommunication  : 与 IMU 模块通信，CRC32，前导 0xA7 0xB6 0xC5
 //
-#ifndef COMMUNICATIONS_HPP
-#define COMMUNICATIONS_HPP
+#ifndef TCS_COMMUNICATIONS_HPP
+#define TCS_COMMUNICATIONS_HPP
 
-#include "SerialProtocol.hpp"
-#include "Protocol.hpp"
-#include "CRC.h"
-#include "McuDataPreprocessor.h"
-#include "FusionFilter.h"
+#include "tcs/communication/SerialProtocol.hpp"
+#include "tcs/communication/Protocol.hpp"
+#include "tcs/communication/CRC.h"
+#include "tcs/communication/McuDataPreprocessor.h"
+#include "tcs/communication/FusionFilter.h"
 #include <string>
 #include <mutex>
+
+namespace tcs {
 
 // ── 端口筛选函数 ──
 
@@ -172,4 +174,6 @@ private:
     YawChassisFusion   fusion_;   // IMU 高频 + MCU 低频融合滤波器
 };
 
-#endif // COMMUNICATIONS_HPP
+
+} // namespace tcs
+#endif // TCS_COMMUNICATIONS_HPP

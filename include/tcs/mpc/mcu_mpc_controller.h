@@ -1,5 +1,5 @@
-#ifndef MCU_MPC_CONTROLLER_H
-#define MCU_MPC_CONTROLLER_H
+#ifndef TCS_MCU_MPC_CONTROLLER_H
+#define TCS_MCU_MPC_CONTROLLER_H
 
 #include <vector>
 #include <thread>
@@ -7,9 +7,11 @@
 #include <cstdint>
 #include <mutex>
 #include <deque>
-#include "communication/Communications.hpp"
-#include "mpc/yaw_mpc_controller.h"
-#include "common/FrameRateCounter.h"
+#include "tcs/communication/Communications.hpp"
+#include "tcs/mpc/yaw_mpc_controller.h"
+#include "tcs/common/FrameRateCounter.h"
+
+namespace tcs {
 
 // ============================================================================
 // McuMpcController — 实车 MCU 控制封装（yaw MPC + 发送参数维护 + 后台发送线程）
@@ -112,4 +114,6 @@ private:
     std::atomic<bool> running_{false};
 };
 
-#endif // MCU_MPC_CONTROLLER_H
+
+} // namespace tcs
+#endif // TCS_MCU_MPC_CONTROLLER_H

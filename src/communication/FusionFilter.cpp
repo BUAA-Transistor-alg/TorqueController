@@ -1,8 +1,10 @@
-#include "communication/FusionFilter.h"
+#include "tcs/communication/FusionFilter.h"
 
 #include <cmath>
 #include <chrono>
 #include <algorithm>
+
+namespace tcs {
 
 namespace {
 
@@ -308,3 +310,5 @@ void YawChassisFusion::onMcu(double yaw_angle, double yaw_omega, double pitch_an
         bias_init_ = true;
     }
 }
+
+} // namespace tcs

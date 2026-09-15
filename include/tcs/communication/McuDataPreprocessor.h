@@ -1,7 +1,9 @@
 #pragma once
 
-#include "Protocol.hpp"
+#include "tcs/communication/Protocol.hpp"
 #include <cmath>
+
+namespace tcs {
 
 // ============================================================================
 // McuDataPreprocessor — MCU 通信数据预处理类
@@ -36,3 +38,5 @@ public:
 private:
     LinearParams params_;
 };
+
+} // namespace tcs

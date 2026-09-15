@@ -1,6 +1,8 @@
-#include "mpc/yaw_mpc_controller.h"
+#include "tcs/mpc/yaw_mpc_controller.h"
 
 #include <algorithm>
+
+namespace tcs {
 
 YawMpcController::YawMpcController(RobotCommunication* comm, double dt_control, int N,
                                    double J, double tau_c, double b, double tau_d,
@@ -94,3 +96,5 @@ YawMpcController::Result YawMpcController::solve(bool integral_enable) {
 
     return r;
 }
+
+} // namespace tcs

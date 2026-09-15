@@ -1,5 +1,7 @@
 // FrameRateCounter.cpp
-#include "common/FrameRateCounter.h"
+#include "tcs/common/FrameRateCounter.h"
+
+namespace tcs {
 
 FrameRateCounter::FrameRateCounter(size_t window_size)
     : window_size_(window_size) {}
@@ -57,3 +59,4 @@ void FrameRateCounter::set_window_size(size_t new_size) {
         frame_times_.pop_front();
     }
 }
+} // namespace tcs

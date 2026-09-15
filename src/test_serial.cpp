@@ -1,9 +1,11 @@
 // test_serial.cpp
-#include "communication/Communications.hpp"
+#include "tcs/communication/Communications.hpp"
 #include <iostream>
 #include <thread>
 #include <csignal>
 #include <iomanip>
+
+namespace tcs {
 
 std::atomic<bool> keep_running{true};
 
@@ -34,6 +36,12 @@ void onReceive(const mcu::ReceivePacket& packet) {
               << static_cast<int>(packet.crc8) << std::dec << std::endl;
     std::cout << std::endl;
 }
+
+} // namespace tcs
+
+// main() 必须留在全局命名空间（否则不是程序入口）；
+// 下面把 namespace tcs 内的名字引入作用域，便于 main() 直接使用。
+using namespace tcs;
 
 int main() {
     signal(SIGINT, signalHandler);

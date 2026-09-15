@@ -6,7 +6,7 @@
 // - 内部：RobotController 建立通信 + 融合 + yaw MPC + 后台发送线程（100Hz），
 //   外部只需 set() 设置目标即可
 // - 运行: ./build/control_demo，Ctrl+C 退出
-#include "RobotController.h"
+#include "tcs/RobotController.h"
 
 #include <cmath>
 #include <cstdio>
@@ -14,6 +14,8 @@
 #include <thread>
 #include <csignal>
 #include <atomic>
+
+namespace tcs {
 
 namespace {
 
@@ -52,6 +54,12 @@ inline double targetPitch(double t) {
 }
 
 } // namespace
+
+} // namespace tcs
+
+// main() 必须留在全局命名空间（否则不是程序入口）；
+// 下面把 namespace tcs 内的名字引入作用域，便于 main() 直接使用。
+using namespace tcs;
 
 int main() {
     std::signal(SIGINT, signalHandler);

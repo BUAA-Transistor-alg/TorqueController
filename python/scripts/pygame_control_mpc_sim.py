@@ -4,8 +4,8 @@ pygame_control_mpc_sim.py — pygame 鼠标控制 yaw 的 MPC 仿真程序（不
 - 与 pygame_control_mpc.py 参数一致、目标输入方式一致（但只取 yaw 轴）：
   鼠标水平移动控制 yaw 目标（点击锁定持续捕获；TAB 切换相对/绝对模式）。
 - 不输出到实车：使用一个与辨识参数完全相同的仿真环境（Python 端实现，
-  显式欧拉 + tanh 软符号摩擦力模型，与 C++ MPCController 内部动力学一致），
-  每帧调用 C API 直接暴露的 MPCController 求解器（librobot_comm_c.so）
+  显式欧拉 + tanh 软符号摩擦力模型，与 C++ tcs::MPCController 内部动力学一致），
+  每帧调用 C API（tcs_mpc_controller_*）包装的 TcsMPCController 求解器（libtcs_robot_comm_c.so）
   求解第一步控制力矩，施加到仿真环境推进一个控制周期（dt=0.01s）。
 - 目标延迟 dt*N（默认 0.2s）与参考序列构造语义与实车 C++ 逻辑一致
   （无底盘 IMU 修正项：theta_imu == theta，chassis_imu_omega == 0）。
@@ -19,7 +19,7 @@ pygame_control_mpc_sim.py — pygame 鼠标控制 yaw 的 MPC 仿真程序（不
 
 import sys, os, math, time
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from torque_controller import MPCController
+from torque_controller import TcsMPCController
 
 import pygame
 from pygame.locals import *
@@ -97,12 +97,12 @@ def busy_wait_until(target_s):
 
 
 # ============================================================================
-# 仿真环境（Python 端，与 C++ MPCController 内部动力学完全一致）
+# 仿真环境（Python 端，与 C++ tcs::MPCController 内部动力学完全一致）
 # ============================================================================
 def sim_step(theta, omega, tau, dt=DT_CTRL):
     """显式欧拉推进一个 dt：
         J*dω/dt = τ - τ_c*tanh(λ·ω) - b·ω + τ_d，λ=100
-    （与 C++ MPCController::dynamicsStep 相同，不对速度做截断）"""
+    （与 C++ tcs::MPCController::dynamicsStep 相同，不对速度做截断）"""
     tau_f = -math.tanh(100.0 * omega) * TAU_C - B_FRIC * omega
     tau_net = tau + tau_f + TAU_D
     alpha = tau_net / J
@@ -113,7 +113,7 @@ def sim_step(theta, omega, tau, dt=DT_CTRL):
 
 def wrap_target_near(target, theta):
     """将 target 转换到与当前 theta 角度差最小的等效角（≡ target mod 2π），
-    与实车 McuMpcController::set 的 target_adj = theta + remainder(target-theta, 2π) 一致"""
+    与实车 C++ tcs::McuMpcController::set 的 target_adj = theta + remainder(target-theta, 2π) 一致"""
     return theta + math.remainder(target - theta, TWO_PI)
 
 
@@ -326,8 +326,8 @@ def main():
     screen = pygame.display.set_mode((WINDOW_W, WINDOW_H))
     pygame.display.set_caption("Yaw MPC Simulation (no robot)")
 
-    # ── MPC 求解器（C API 直接暴露的 MPCController，参数与实车一致）──
-    mpc = MPCController(
+    # ── MPC 求解器（C API tcs_mpc_controller_* 包装的 TcsMPCController，参数与实车一致）──
+    mpc = TcsMPCController(
         dt_control=DT_CTRL, dt_sim=DT_CTRL, N=MPC_PRED_N,
         J=J, tau_c=TAU_C, b=B_FRIC, tau_d=TAU_D,
         max_torque=MAX_TORQUE, max_torque_rate=MAX_TORQUE_RATE,
@@ -416,7 +416,7 @@ def main():
                 target_yaw, yaw_pos_p, yaw_vel_p, yaw_acc_p, DT_CTRL)
             mpc_target_yaw = yaw_pos_p
 
-        # ── 目标卷绕到当前仿真角度附近（与实车 McuMpcController::set 一致）──
+        # ── 目标卷绕到当前仿真角度附近（与实车 C++ tcs::McuMpcController::set 一致）──
         target_adj = wrap_target_near(mpc_target_yaw, theta)
         target_buf.append(target_adj)
 
@@ -426,7 +426,7 @@ def main():
             ref.append(ref[-1] if ref else target_adj)
         delayed_target = ref[0]
 
-        # ── MPC 求解（C API 直接暴露的 MPCController）──
+        # ── MPC 求解（C API tcs_mpc_controller_* 包装的 TcsMPCController）──
         res = mpc.step(theta, omega, ref)
         ref_seq = mpc.get_last_ref()
         pred_seq = mpc.get_last_pred()

@@ -1,4 +1,6 @@
-#include "RobotController.h"
+#include "tcs/RobotController.h"
+
+namespace tcs {
 
 RobotController::RobotController(double dt_control, int N,
                                  double J, double tau_c, double b, double tau_d,
@@ -110,3 +112,5 @@ void RobotController::set(bool auto_aim_enable, bool yaw_torque_only_mode,
     mcu_mpc_.set(auto_aim_enable, yaw_torque_only_mode,
                  target_yaw_seq, pitch_seq, fire_seq, integral_enable);
 }
+
+} // namespace tcs

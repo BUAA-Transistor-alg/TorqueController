@@ -1,10 +1,12 @@
-#ifndef MPC_CONTROLLER_H
-#define MPC_CONTROLLER_H
+#ifndef TCS_MPC_CONTROLLER_H
+#define TCS_MPC_CONTROLLER_H
 
 #include <vector>
 #include <utility>
 #include <cmath>
 #include <algorithm>
+
+namespace tcs {
 
 // ============================================================================
 // MPCController — 偏航轴 MPC 求解器（Ceres）
@@ -134,4 +136,6 @@ private:
     }
 };
 
-#endif // MPC_CONTROLLER_H
+
+} // namespace tcs
+#endif // TCS_MPC_CONTROLLER_H

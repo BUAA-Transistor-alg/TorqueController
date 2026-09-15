@@ -1,5 +1,7 @@
 // CRC.cpp
-#include "communication/CRC.h"
+#include "tcs/communication/CRC.h"
+
+namespace tcs {
 
 // CRC8查表法表格定义
 const uint8_t CRC8_TAB[256] = {
@@ -67,3 +69,5 @@ uint32_t CRC32_Calculate(const uint8_t* data, size_t length) {
     
     return crc;
 }
+
+} // namespace tcs

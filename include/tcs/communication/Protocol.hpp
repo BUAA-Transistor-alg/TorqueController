@@ -2,6 +2,9 @@
 #include <cstdint>
 #include <cstddef>
 
+// 命名空间: tcs::mcu（电控协议）/ tcs::imu（IMU 协议）
+namespace tcs {
+
 // ============================================================================
 // MCU (电控) 通信协议
 // ============================================================================
@@ -90,3 +93,5 @@ struct ReceivePacket
 #pragma pack(pop)
 
 } // namespace imu
+
+} // namespace tcs

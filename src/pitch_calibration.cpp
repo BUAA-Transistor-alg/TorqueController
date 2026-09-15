@@ -11,7 +11,7 @@
 // 拟合，得到的斜率和截距更能代表系统的真实线性特性，避免端点异常值
 // 拉偏回归结果。
 
-#include "communication/Communications.hpp"
+#include "tcs/communication/Communications.hpp"
 #include <iostream>
 #include <iomanip>
 #include <vector>
@@ -20,6 +20,8 @@
 #include <mutex>
 #include <thread>
 #include <csignal>
+
+namespace tcs {
 
 namespace {
 
@@ -314,6 +316,12 @@ void PitchCalibrator::run() {
 }
 
 } // namespace
+
+} // namespace tcs
+
+// main() 必须留在全局命名空间（否则不是程序入口）；
+// 下面把 namespace tcs 内的名字引入作用域，便于 main() 直接使用。
+using namespace tcs;
 
 int main() {
     signal(SIGINT,  signalHandler);

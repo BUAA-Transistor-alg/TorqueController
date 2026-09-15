@@ -1,10 +1,12 @@
 // FrameRateCounter.h
-#ifndef FRAME_RATE_COUNTER_HPP
-#define FRAME_RATE_COUNTER_HPP
+#ifndef TCS_FRAME_RATE_COUNTER_HPP
+#define TCS_FRAME_RATE_COUNTER_HPP
 
 #include <deque>
 #include <chrono>
 #include <algorithm>
+
+namespace tcs {
 
 class FrameRateCounter {
 public:
@@ -55,4 +57,6 @@ private:
     size_t window_size_;               // 滑动窗口大小（帧数）
 };
 
-#endif // FRAME_RATE_COUNTER_HPP
+
+} // namespace tcs
+#endif // TCS_FRAME_RATE_COUNTER_HPP

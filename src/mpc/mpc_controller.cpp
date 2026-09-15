@@ -1,9 +1,11 @@
-#include "mpc/mpc_controller.h"
+#include "tcs/mpc/mpc_controller.h"
 
 #include <cmath>
 #include <algorithm>
 #include <stdexcept>
 #include <ceres/ceres.h>
+
+namespace tcs {
 
 // ------------------------------------------------------------
 // Ceres 代价函数（增量重参数化：d[0]=u[0]，d[k]=u[k]-u[k-1]）
@@ -176,3 +178,5 @@ MPCController::Result MPCController::step(double theta, double omega,
     result.omega = om;
     return result;
 }
+
+} // namespace tcs

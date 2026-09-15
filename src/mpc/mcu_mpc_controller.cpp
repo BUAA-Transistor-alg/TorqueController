@@ -1,8 +1,10 @@
-#include "mpc/mcu_mpc_controller.h"
+#include "tcs/mpc/mcu_mpc_controller.h"
 
 #include <chrono>
 #include <cmath>
 #include <algorithm>
+
+namespace tcs {
 
 McuMpcController::McuMpcController(RobotCommunication* comm, double dt_control, int N,
                                    double J, double tau_c, double b, double tau_d,
@@ -178,3 +180,5 @@ void McuMpcController::loop() {
         ++ticks_since_set_;
     }
 }
+
+} // namespace tcs

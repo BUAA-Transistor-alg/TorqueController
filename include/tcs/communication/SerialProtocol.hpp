@@ -9,8 +9,8 @@
 // CRC 返回值类型和字节数从 CRC_Func 自动推导。
 // 帧格式: [前导(PreambleLen 字节)] [data_size(1B)] [payload] [CRC(CRC_SIZE)]
 //
-#ifndef SERIALPROTOCOL_HPP
-#define SERIALPROTOCOL_HPP
+#ifndef TCS_SERIALPROTOCOL_HPP
+#define TCS_SERIALPROTOCOL_HPP
 
 #include <fcntl.h>
 #include <termios.h>
@@ -36,6 +36,8 @@
 #include <thread>
 #include <algorithm>
 #include <type_traits>
+
+namespace tcs {
 
 // 从函数指针类型提取返回值类型
 template <typename T>
@@ -335,4 +337,6 @@ void SerialProtocol<S, R, C, P, L>::timerThread() {
     }
 }
 
-#endif // SERIALPROTOCOL_HPP
+
+} // namespace tcs
+#endif // TCS_SERIALPROTOCOL_HPP
