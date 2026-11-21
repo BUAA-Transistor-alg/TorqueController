@@ -41,6 +41,7 @@ RobotController::State RobotController::getState() {
         st.mcu.color            = m.color;
         st.mcu.auto_aim_switch  = m.auto_aim_switch;
         st.mcu.yaw_temperature  = m.yaw_temperature;
+        st.mcu.fold             = m.fold;
     }
     if (raw.imu_valid) {
         const auto& im = raw.imu_packet;

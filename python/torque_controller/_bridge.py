@@ -90,7 +90,8 @@ class TcsMcuReceivePacket(Structure):
         ("yaw_angle",         c_double),("yaw_omega",         c_float),
         ("chassis_imu_yaw",   c_float), ("chassis_imu_omega", c_float),
         ("mark",              c_uint8), ("color",             c_uint8),
-        ("auto_aim_switch",   c_uint8), ("yaw_temperature",   c_uint8), ("crc8",              c_uint8),
+        ("auto_aim_switch",   c_uint8), ("yaw_temperature",   c_uint8), ("fold",              c_uint8),
+        ("crc8",              c_uint8),
     ]
 
 
@@ -420,5 +421,5 @@ class TcsRobotCommunication:
 
 # ── 启动时验证 ctypes 布局 ──
 assert ctypes.sizeof(TcsMcuSendPacket) == 28, f"TcsMcuSendPacket size mismatch: {ctypes.sizeof(TcsMcuSendPacket)}"
-assert ctypes.sizeof(TcsMcuReceivePacket) == 37, f"TcsMcuReceivePacket size mismatch: {ctypes.sizeof(TcsMcuReceivePacket)}"
+assert ctypes.sizeof(TcsMcuReceivePacket) == 38, f"TcsMcuReceivePacket size mismatch: {ctypes.sizeof(TcsMcuReceivePacket)}"
 assert ctypes.sizeof(TcsImuReceivePacket) == 60, f"TcsImuReceivePacket size mismatch: {ctypes.sizeof(TcsImuReceivePacket)}"

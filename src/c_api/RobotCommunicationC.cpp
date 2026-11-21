@@ -46,6 +46,7 @@ TCS_ASSERT_OFFSET(TcsMcuReceivePacket_C, tcs::mcu::ReceivePacket, mark);
 TCS_ASSERT_OFFSET(TcsMcuReceivePacket_C, tcs::mcu::ReceivePacket, color);
 TCS_ASSERT_OFFSET(TcsMcuReceivePacket_C, tcs::mcu::ReceivePacket, auto_aim_switch);
 TCS_ASSERT_OFFSET(TcsMcuReceivePacket_C, tcs::mcu::ReceivePacket, yaw_temperature);
+TCS_ASSERT_OFFSET(TcsMcuReceivePacket_C, tcs::mcu::ReceivePacket, fold);
 TCS_ASSERT_OFFSET(TcsMcuReceivePacket_C, tcs::mcu::ReceivePacket, crc8);
 
 static_assert(sizeof(TcsMcuSendPacket_C)    == sizeof(tcs::mcu::SendPacket),    "McuSendPacket size mismatch");

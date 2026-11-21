@@ -37,6 +37,7 @@ public:
         float  chassis_imu_yaw = 0.0f;
         float  chassis_imu_omega = 0.0f;
         uint8_t mark = 0, color = 0, auto_aim_switch = 0, yaw_temperature = 0;
+        uint8_t fold = 0;                  // 0 表示云台折叠，1 表示云台升起；数据有效性由 valid 表示
     };
 
     // IMU 原始数据

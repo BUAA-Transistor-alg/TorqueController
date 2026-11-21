@@ -36,7 +36,7 @@ struct ReceivePacket
     uint8_t frame_header1 = 0x42;
     uint8_t frame_header2 = 0x52;
     uint8_t protocol_version = 0x02;
-    uint8_t data_size;
+    uint8_t data_size = 33;
     float bullet_velocity;              // m/s
     float pitch_angle;                  // -pi/2 ~ pi/2
     double yaw_angle;                   // rad 不限位，计算多圈，这里不要减掉imu的角度，直接读yaw轴电机编码器的角度
@@ -47,6 +47,7 @@ struct ReceivePacket
     uint8_t color;                      // 原颜色标志位
     uint8_t auto_aim_switch;            // 电控的自瞄开关
     uint8_t yaw_temperature;            // yaw轴电机温度
+    uint8_t fold;                       // 0 表示云台折叠，1 表示云台升起；无折叠机构的车辆发送 1
     uint8_t crc8;
 };
 #pragma pack(pop)

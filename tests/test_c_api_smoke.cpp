@@ -49,6 +49,17 @@ int main() {
         tcs::imu::SendPacket imu_tx{};
         tcs::imu::ReceivePacket imu_rx{};
 
+        check(mcu_rx.data_size == 33 && sizeof(mcu_rx) == 38 &&
+                  offsetof(tcs::mcu::ReceivePacket, fold) == 36 &&
+                  offsetof(tcs::mcu::ReceivePacket, crc8) == 37,
+              "MCU 接收包载荷为 33 字节，完整长度为 38 字节，fold/CRC8 偏移正确");
+        tcs::McuDataPreprocessor preprocessor;
+        for (uint8_t fold : {0, 1}) {
+            mcu_rx.fold = fold;
+            check(preprocessor.processReceive(mcu_rx).fold == fold,
+                  "MCU 接收预处理保留 fold 状态");
+        }
+
         check(mcu_tx.frame_header1 == 0x42 && mcu_tx.frame_header2 == 0x52 &&
                   mcu_tx.protocol_version == 0x02 && mcu_tx.data_size == 23,
               "tcs::mcu::SendPacket 默认前导/长度 = 0x42 0x52 0x02 / 23");
