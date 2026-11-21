@@ -11,6 +11,8 @@
 #include "tcs/communication/CRC.h"
 #include "tcs/communication/McuDataPreprocessor.h"
 #include "tcs/communication/FusionFilter.h"
+#include "tcs/communication/ImuMountCompensation.h"
+#include <utility>
 #include <string>
 #include <mutex>
 
@@ -40,13 +42,23 @@ using McuCommunication = SerialProtocol<
 >;
 
 // IMU 通信：CRC32，前导字节见 imu::SendPacket / imu::ReceivePacket
-using ImuCommunication = SerialProtocol<
+using ImuSerialProtocol = SerialProtocol<
     imu::SendPacket,
     imu::ReceivePacket,
     CRC32_Calculate,
     imuPortSelector,
     imu::PREAMBLE_SIZE
 >;
+
+class ImuCommunication : public ImuSerialProtocol {
+public:
+    explicit ImuCommunication(std::function<void(const imu::ReceivePacket&)> callback,
+                              bool auto_start = true)
+        : ImuSerialProtocol(
+              [callback = std::move(callback)](const imu::ReceivePacket& packet) {
+                  callback(compensateImuMount(packet));
+              }, auto_start) {}
+};
 
 // ============================================================================
 // RobotCommunication — 组合 MCU 与 IMU 通信，封装数据预处理
@@ -81,7 +93,7 @@ public:
         imu_serial_.stopWorker();
     }
 
-    // 获取最新数据（MCU 数据已在回调中预处理）
+    // 获取最新数据（MCU 已完成标定映射，IMU 已按安装配置补偿）
     LatestData getLatestData() {
         LatestData data;
         {
@@ -134,7 +146,7 @@ public:
     }
 
 private:
-    // ── 回调：存储原始数据 + 喂融合滤波器 ──
+    // ── 回调：存储安装补偿后的 IMU 数据并更新融合滤波器 ──
     void onImuReceive(const imu::ReceivePacket& packet) {
         {
             std::lock_guard<std::mutex> lock(imu_mutex_);

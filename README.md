@@ -17,7 +17,7 @@ pfx = `tcbs`）一起被父工程 `add_subdirectory()` 引入，并在同一进�
 | 项目 | 约定 | 本仓库示例 |
 |---|---|---|
 | CMake target | `tcs_<原名>`，并加 ALIAS `tcs::<原名>` | `tcs_communication` / `tcs::communication`、`tcs_robot_comm_c` / `tcs::robot_comm_c` |
-| 产物文件名 | `tcs_<原名>`（`.so` 与 `.a` 都要） | `libtcs_robot_comm_c.so`、`libtcs_communication.a`、`tcs_control_demo` |
+| 产物文件名 | 库使用 `tcs_` 前缀，控制演示与标定程序保留原名 | `libtcs_robot_comm_c.so`、`libtcs_communication.a`、`control_demo`、`pitch_calibration` |
 | ctest 名 | `tcs_<原名>` | `tcs_c_api_smoke` |
 | C ABI 符号 | `tcs_` 前缀 | `tcs_robot_comm_create`、`tcs_mpc_controller_step` |
 | C 类型 / 宏 | `Tcs` 驼峰 / `TCS_` 前缀 | `TcsRobotLatestData_C`、`TCS_ROBOT_CONTROLLER_H` |
@@ -50,15 +50,31 @@ target_link_libraries(your_target PRIVATE tcs::robot_comm_c)
 bash ./build.sh            # 等价于 cmake + make -j$(nproc)
 ```
 
+IMU 绕 Y 轴旋转 180° 安装时，启用安装补偿后构建（在子模组目录执行）：
+
+```bash
+cmake -S . -B build -DIS_INFANTRY_2=ON
+cmake --build build -j2
+ctest --test-dir build --output-on-failure
+```
+
+`IS_INFANTRY_2` 默认关闭；恢复原安装方式时配置为 `OFF` 并重新编译。
+该选项也可在父工程配置时传入。`ImuCommunication` 在报文通过 CRC 校验后统一转换数据，
+`control_demo`、`pitch_calibration` 和 `RobotController` 均使用转换后的数据。
+角速度和加速度的 X、Z 分量反向，Y 分量保持原值；ZXY 姿态右乘 `Ry(π)`，
+`euler_yaw`、`euler_pitch` 保持原值，`euler_roll` 增加 π 并归一化到 `(-π, π]`。
+报文布局保持原值，输出结构体的 `crc32` 保留接收值，仅用于记录原始报文的校验值。
+
 产物（`build/`）：
 
 | 产物 | 说明 |
 |---|---|
 | `libtcs_robot_comm_c.so` | C API + `tcs::RobotController` 动态库（供 Python ctypes 与外部 cpp 链接） |
 | `libtcs_communication.a` | 通信静态库（工具程序用） |
-| `tcs_control_demo` | 正弦目标控制演示（使用 `tcs::RobotController`） |
+| `control_demo` | 正弦目标控制演示（使用 `tcs::RobotController`） |
 | `tcs_test_serial` | 串口通信测试 |
-| `tcs_pitch_calibration` | pitch 轴标定 |
+| `pitch_calibration` | pitch 轴标定 |
+| `fold_demo` | 接收 MCU 的 `fold` 字段，首次接收及状态变化时显示：`0` 为云台折叠，`1` 为云台升起；运行 `./build/fold_demo`，Ctrl+C 退出 |
 | `tcs_test_c_api_smoke` | C ABI / 命名空间自检（ctest 名 `tcs_c_api_smoke`，无硬件可跑） |
 
 ---
@@ -179,9 +195,9 @@ int main() {
 
 | 程序 | 说明 |
 |---|---|
-| **`tcs_control_demo`** | 使用 `tcs::RobotController` 的正弦控制演示：3s 周期正弦控制 `target_yaw`（±30°）与 `pitch_target_angle`（−10°~+20°），两者相位差 90°。Ctrl+C 退出 |
+| **`control_demo`** | 使用 `tcs::RobotController` 的正弦控制演示：3s 周期正弦控制 `target_yaw`（±30°）与 `pitch_target_angle`（−10°~+20°），两者相位差 90°。Ctrl+C 退出 |
 | **`tcs_test_serial`** | 串口通信自检：打印 MCU 回传的 yaw/pitch/温度/底盘 IMU 等字段，验证通信链路 |
-| **`tcs_pitch_calibration`** | pitch 轴标定工具：采集 IMU pitch 与 MCU pitch 对应关系，用于生成 `tcs::McuDataPreprocessor` 的线性标定参数 |
+| **`pitch_calibration`** | pitch 轴标定工具：采集 IMU pitch 与 MCU pitch 对应关系，用于生成 `tcs::McuDataPreprocessor` 的线性标定参数 |
 | **`tcs_test_c_api_smoke`** | C ABI / 命名空间自检（`ctest -R tcs_c_api_smoke`）：协议布局、CRC 数值、C API 句柄与 MPC 求解器、`tcs::RobotController` 全链路，无硬件可跑 |
 
 ### 4.2 Python 脚本（`python/scripts/`，用 `PYTHONPATH=python python3 python/scripts/xxx.py` 运行）
@@ -253,7 +269,7 @@ IMU(高频) ──┘
 - **yaw 轴控制延后 `dt_control × N`（默认 0.2s）**：`set` 的 `target_yaw` 经内部延迟缓冲后才进入 MPC 参考序列；`pitch_target_angle` 等其余发送参数直接透传、无延迟（详见 2.2 节重点说明）
 - `target_yaw` 为多圈连续角度（非 wrap 到 [−π,π]），`set` 内自动卷绕到与 `imu_yaw_unwrapped` 差最小的等效角
 - 融合滤波器当前假设底盘与地面平行（`chassis_imu_yaw/omega` 直接利用）
-- 实机使用前建议先跑 `tcs_test_serial` 确认通信、再跑 `tcs_control_demo` 低幅验证，最后用 `pygame_control_mpc.py` 交互控制
+- 实机使用前建议先运行 `tcs_test_serial` 确认通信，再运行 `control_demo` 验证控制，最后使用 `pygame_control_mpc.py` 交互控制。
 - 辨识参数修改后需同步更新各程序的 J/τ_c/b/τ_d（`pygame_control_mpc.py`、`control_demo.cpp`、`tcs::RobotController` 构造参数）
 - 所有 C++ 类型都在 `namespace tcs` 内（`tcs::RobotController`、`tcs::YawChassisFusion`、
   `tcs::mcu::SendPacket` …），C ABI 符号带 `tcs_` 前缀、C 类型带 `Tcs` 前缀——与子模组

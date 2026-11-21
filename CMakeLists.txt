@@ -50,11 +50,14 @@ find_package(Ceres REQUIRED)
 # 本仓库对外暴露的唯一 include 根目录（第二级目录名不再出现在搜索路径里）
 set(TCS_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
+option(IS_INFANTRY_2 "启用 Infantry2 的 IMU 绕 Y 轴旋转 180 度安装补偿" OFF)
+
 # ============================================================================
 # 通信库（串口协议 + CRC + MCU 数据预处理 + yaw/底盘融合滤波器）
 # ============================================================================
 set(TCS_COMMUNICATION_SOURCES
     src/communication/CRC.cpp
+    src/communication/ImuMountCompensation.cpp
     src/communication/McuDataPreprocessor.cpp
     src/communication/FusionFilter.cpp
 )
@@ -86,13 +89,20 @@ add_library(tcs_robot_comm_c SHARED
     src/RobotController.cpp
 )
 add_library(tcs::robot_comm_c ALIAS tcs_robot_comm_c)
-set_target_properties(tcs_robot_comm_c PROPERTIES OUTPUT_NAME tcs_robot_comm_c)
+set_target_properties(tcs_robot_comm_c PROPERTIES
+    OUTPUT_NAME tcs_robot_comm_c
+    LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 target_include_directories(tcs_robot_comm_c PUBLIC
     ${TCS_INCLUDE_DIR}
     ${CERES_INCLUDE_DIRS}
 )
 target_compile_features(tcs_robot_comm_c PUBLIC cxx_std_17)
 target_link_libraries(tcs_robot_comm_c PUBLIC ${TCS_UDEV_LIBRARY} ${CERES_LIBRARIES})
+
+foreach(tcs_target tcs_communication tcs_robot_comm_c)
+    target_compile_definitions(${tcs_target} PUBLIC
+        IS_INFANTRY_2=$<BOOL:${IS_INFANTRY_2}>)
+endforeach()
 
 # ============================================================================
 # 示例 / 工具
@@ -104,16 +114,27 @@ target_include_directories(tcs_test_serial PRIVATE ${TCS_INCLUDE_DIR})
 target_compile_features(tcs_test_serial PRIVATE cxx_std_17)
 target_link_libraries(tcs_test_serial PRIVATE tcs::communication)
 
+# MCU 折叠状态显示
+add_executable(tcs_fold_demo src/fold_demo.cpp)
+set_target_properties(tcs_fold_demo PROPERTIES
+    OUTPUT_NAME fold_demo
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
+target_link_libraries(tcs_fold_demo PRIVATE tcs::communication)
+
 # Pitch 轴标定程序
 add_executable(tcs_pitch_calibration src/pitch_calibration.cpp)
-set_target_properties(tcs_pitch_calibration PROPERTIES OUTPUT_NAME tcs_pitch_calibration)
+set_target_properties(tcs_pitch_calibration PROPERTIES
+    OUTPUT_NAME pitch_calibration
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 target_include_directories(tcs_pitch_calibration PRIVATE ${TCS_INCLUDE_DIR})
 target_compile_features(tcs_pitch_calibration PRIVATE cxx_std_17)
 target_link_libraries(tcs_pitch_calibration PRIVATE tcs::communication)
 
 # 控制演示程序（使用 tcs::RobotController 一体化封装）
 add_executable(tcs_control_demo src/control_demo.cpp)
-set_target_properties(tcs_control_demo PROPERTIES OUTPUT_NAME tcs_control_demo)
+set_target_properties(tcs_control_demo PROPERTIES
+    OUTPUT_NAME control_demo
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 target_compile_features(tcs_control_demo PRIVATE cxx_std_17)
 target_link_libraries(tcs_control_demo PRIVATE tcs::robot_comm_c)
 
@@ -126,3 +147,8 @@ target_include_directories(tcs_test_c_api_smoke PRIVATE ${TCS_INCLUDE_DIR})
 target_compile_features(tcs_test_c_api_smoke PRIVATE cxx_std_17)
 target_link_libraries(tcs_test_c_api_smoke PRIVATE tcs::robot_comm_c)
 add_test(NAME tcs_c_api_smoke COMMAND tcs_test_c_api_smoke)
+
+find_package(Eigen3 REQUIRED)
+add_executable(tcs_test_imu_mount tests/test_imu_mount.cpp)
+target_link_libraries(tcs_test_imu_mount PRIVATE tcs::communication Eigen3::Eigen)
+add_test(NAME tcs_imu_mount COMMAND tcs_test_imu_mount)

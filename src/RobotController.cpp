@@ -26,7 +26,7 @@ RobotController::~RobotController() {
 RobotController::State RobotController::getState() {
     State st;
 
-    // ── MCU / IMU 原始数据 ──
+    // ── MCU 标定映射数据 / IMU 安装补偿数据 ──
     auto raw = comm_.getLatestData();
     if (raw.mcu_valid) {
         const auto& m = raw.mcu_packet;
