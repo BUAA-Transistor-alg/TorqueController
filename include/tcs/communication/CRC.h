@@ -1,9 +1,11 @@
 // CRC.h
-#ifndef CRC_H
-#define CRC_H
+#ifndef TCS_CRC_H
+#define TCS_CRC_H
 
 #include <stdint.h>
 #include <cstddef>
+
+namespace tcs {
 
 // CRC8查表法表格声明
 extern const uint8_t CRC8_TAB[256];
@@ -14,4 +16,6 @@ uint8_t CRC8_Check_Sum(const uint8_t *pchMessage, size_t dwLength);
 // CRC32校验函数声明（STM32 HAL兼容）
 uint32_t CRC32_Calculate(const uint8_t* data, size_t length);
 
-#endif // CRC_H
+
+} // namespace tcs
+#endif // TCS_CRC_H

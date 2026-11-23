@@ -4,11 +4,45 @@ AI生成的说明，看了一下基本没有问题，主要用RobotController就
 
 RoboMaster 云台偏航轴（yaw）力矩控制系统：上位机通过 USB 串口与电控 MCU、独立 IMU 通信，融合高频 IMU 与低频 MCU 数据，用 **MPC（模型预测控制）** 求解力矩指令，并通过 C++ / Python 两种方式驱动实车。
 
-核心：**`RobotController` 一体化封装类** —— 外部程序只需实例化一个类即可完成"通信 + 融合 + MPC 求解 + 后台 100Hz 发送"的全部控制闭环。
+核心：**`RobotController` 一体化封装类** —— 外部程序只需实例化一个类即可完成"通信 + 融合 + MPC 求解 + 后台发送（周期由 `mpc_loop_period` 指定，默认示例 100Hz）"的全部控制闭环。
 
 ---
 
-## 1. 构建
+## 1. 模块标识与"作为子模组共存"（pfx = `tcs`）
+
+本仓库可作为**子模组**与其它子模组（例如同源的双级 yaw 仓库 `TorqueControllerForBigSmallYaw`，
+pfx = `tcbs`）一起被父工程 `add_subdirectory()` 引入，并在同一进程内同时加载两个 `.so`
+而不互相干扰。为此全仓库统一前缀化，约定如下：
+
+| 项目 | 约定 | 本仓库示例 |
+|---|---|---|
+| CMake target | `tcs_<原名>`，并加 ALIAS `tcs::<原名>` | `tcs_communication` / `tcs::communication`、`tcs_robot_comm_c` / `tcs::robot_comm_c` |
+| 产物文件名 | 库使用 `tcs_` 前缀，控制演示与标定程序保留原名 | `libtcs_robot_comm_c.so`、`libtcs_communication.a`、`control_demo`、`pitch_calibration` |
+| ctest 名 | `tcs_<原名>` | `tcs_c_api_smoke` |
+| C ABI 符号 | `tcs_` 前缀 | `tcs_robot_comm_create`、`tcs_mpc_controller_step` |
+| C 类型 / 宏 | `Tcs` 驼峰 / `TCS_` 前缀 | `TcsRobotLatestData_C`、`TCS_ROBOT_CONTROLLER_H` |
+| 头文件路径 | 物理位于 `include/tcs/...`，一律 `#include "tcs/..."` | `#include "tcs/RobotController.h"` |
+| C++ 命名空间 | 全部在 `namespace tcs` 内（`mcu`/`imu` 成为子命名空间） | `tcs::RobotController`、`tcs::mcu::SendPacket` |
+| C API 头 | **例外**：`include/tcs/c_api/RobotCommunicationC.h` 保持合法 C11 + `extern "C"`，不进 C++ 命名空间 | — |
+| CMake cache 变量 | `TCS_` 前缀 | `TCS_UDEV_LIBRARY` |
+| Python 类名 | `Tcs` 前缀 | `TcsRobotCommunication`、`TcsRobotLatestData` |
+| Python 库路径环境变量 | `TCS_LIB` 优先，`TORQUE_CONTROLLER_LIB` 兼容 | — |
+
+父工程侧用法：
+
+```cmake
+add_subdirectory(<本仓库路径> ${CMAKE_BINARY_DIR}/tcs EXCLUDE_FROM_ALL)
+target_link_libraries(your_target PRIVATE tcs::robot_comm_c)
+```
+
+作为子目录时本仓库**不**调用 `project()` / `enable_testing()`，也**不**使用
+`add_compile_options` / `include_directories` / 全局 `CMAKE_*` 设置；C++17 通过
+`target_compile_features(... cxx_std_17)` 逐 target 指定，include 目录只暴露 `include`
+这一层（不再暴露 `include/communication`、`include/mpc` 等二级目录，避免裸路径撞车）。
+
+---
+
+## 2. 构建
 
 依赖：Linux、libudev、Ceres（`find_package(Ceres)`）、g++（C++17）；`test_control` 还需 SDL2、OpenGL、FreeType 开发库和 DejaVu Sans Mono 字体；Python 侧还需 `pygame`、`numpy`、`torch`（仅辨识用）。
 
@@ -16,44 +50,72 @@ RoboMaster 云台偏航轴（yaw）力矩控制系统：上位机通过 USB 串�
 bash ./build.sh            # 等价于 cmake + make -j$(nproc)
 ```
 
+IMU 绕 Y 轴旋转 180° 安装时，启用安装补偿后构建（在子模组目录执行）：
+
+```bash
+cmake -S . -B build -DIS_INFANTRY_2=ON
+cmake --build build -j2
+ctest --test-dir build --output-on-failure
+```
+
+`IS_INFANTRY_2` 默认关闭；恢复原安装方式时配置为 `OFF` 并重新编译。
+该选项也可在父工程配置时传入。`ImuCommunication` 在报文通过 CRC 校验后统一转换数据，
+`control_demo`、`pitch_calibration`、`test_control` 和 `RobotController` 均使用转换后的数据。
+角速度和加速度的 X、Z 分量反向，Y 分量保持原值；ZXY 姿态右乘 `Ry(π)`，
+`euler_yaw`、`euler_pitch` 保持原值，`euler_roll` 增加 π 并归一化到 `(-π, π]`。
+报文布局保持原值，输出结构体的 `crc32` 保留接收值，仅用于记录原始报文的校验值。
+
 产物（`build/`）：
 
 | 产物 | 说明 |
 |---|---|
-| `librobot_comm_c.so` | C API + RobotController 动态库（供 Python ctypes 与外部 cpp 链接） |
-| `libcommunication.a` | 通信静态库（工具程序用） |
-| `control_demo` | 正弦目标控制演示（使用 RobotController） |
-| `test_serial` | 串口通信测试 |
+| `libtcs_robot_comm_c.so` | C API + `tcs::RobotController` 动态库（供 Python ctypes 与外部 cpp 链接） |
+| `libtcs_communication.a` | 通信静态库（工具程序用） |
+| `control_demo` | 正弦目标控制演示（使用 `tcs::RobotController`） |
+| `tcs_test_serial` | 串口通信测试 |
+| `test_control` | 只接收 IMU/MCU，实时显示底盘和云台姿态；支持 `--demo` 模拟数据 |
 | `pitch_calibration` | pitch 轴标定 |
+| `fold_demo` | 接收 MCU 的 `fold` 字段，首次接收及状态变化时显示：`0` 为云台折叠，`1` 为云台升起；运行 `./build/fold_demo`，Ctrl+C 退出 |
+| `tcs_test_c_api_smoke` | C ABI / 命名空间自检（ctest 名 `tcs_c_api_smoke`，无硬件可跑） |
 
 ---
 
-## 2. `RobotController` 使用方法（核心）
+## 3. `RobotController` 使用方法（核心）
 
-头文件：`include/RobotController.h`（链接 `librobot_comm_c.so`）。
+头文件：`include/tcs/RobotController.h`（链接 `libtcs_robot_comm_c.so`；类在 `namespace tcs` 内）。
 
-### 2.1 构造
+### 3.1 构造
 
 ```cpp
-#include "RobotController.h"
+#include "tcs/RobotController.h"
 
+// 所有 C++ 类型都在 namespace tcs 内（本仓库源码内部用 tcs:: 全限定名，下同）
 // dt_control: 控制周期（秒）；N: MPC 预测步数
 // J/tau_c/b/tau_d: 辨识参数（params/1/Identified_parameters.txt，tau_d 通常置 0）
 // max_torque/max_torque_rate: 约束（N·m / N·m/s）
 // Q/R/Rd/max_iter: MPC 代价权重与迭代上限
+//   （目标函数: 位置跟踪误差 = Q·sqrt(err²+smooth_eps)（平滑绝对值），
+//    控制量 = R·u²、力矩变化率 = Rd·Δu²（均方误差））
+// smooth_eps: 位置误差平滑绝对值常数 a（sqrt(err²+a) 中的 a，很小的正数，
+//             默认 1e-6；可省略）
 // integral_gain: yaw 力矩积分补偿比例系数（必须传参）
+// mpc_loop_period: McuMpcController 后台 loop 周期（秒，必须传参，无默认值；
+//                   0.01 = 100Hz）
 // mcu_linear_params: MCU 数据线性映射标定参数（默认构造为当前标定值）
 // sequence_mode: 是否选择序列模式（默认 false）
-RobotController rc(0.01, 20,
-                   0.016541, 0.097297, 0.0321, 0.0,
-                   1.0, 40.0, 5.0, 0.01, 0.1, 30,
-                   0.01,
-                   McuDataPreprocessor::LinearParams{});
+tcs::RobotController rc(0.01, 20,
+                        0.016541, 0.097297, 0.0321, 0.0,
+                        1.0, 40.0, 5.0, 0.01, 0.1, 30,
+                        0.01,
+                        0.01,
+                        tcs::McuDataPreprocessor::LinearParams{});
+// 如需调整平滑绝对值常数 a（默认 1e-6）:
+// tcs::RobotController rc(..., tcs::McuDataPreprocessor::LinearParams{}, false, 1e-6);
 ```
 
-构造内部自动完成：建立 MCU/IMU 串口通信与融合滤波器（`RobotCommunication`）、建立 yaw MPC 封装（`McuMpcController`，含参考序列 + 求解 + **后台 100Hz 发送线程**，线程已自动启动）。
+构造内部自动完成：建立 MCU/IMU 串口通信与融合滤波器（`tcs::RobotCommunication`）、建立 yaw MPC 封装（`tcs::McuMpcController`，含参考序列 + 求解 + **后台发送线程**，周期 = `mpc_loop_period`，线程已自动启动）。
 
-### 2.2 设置目标（直通 `McuMpcController::set`）
+### 3.2 设置目标（直通 `tcs::McuMpcController::set`）
 
 ```cpp
 // 参数顺序: auto_aim_enable, yaw_torque_only_mode, target_yaw, pitch_target_angle,
@@ -70,7 +132,10 @@ rc.set(true,   // auto_aim_enable
        false); // integral_enable（积分补偿开关）
 ```
 
-每次调用即更新目标，后台 100Hz 线程持续读取最新目标、求解 MPC 并发送 MCU。
+每次调用即更新目标，后台发送线程（周期 = `mpc_loop_period`，默认示例 100Hz）持续读取最新目标、求解 MPC 并发送 MCU。
+
+（C ABI 用户注意：C 侧导出的是 `tcs_robot_comm_*` / `tcs_mcu_mpc_*` / `tcs_mpc_controller_*`，
+结构体为 `Tcs*_C`，见 `include/tcs/c_api/RobotCommunicationC.h`。）
 
 ### ⚠️ 重点：yaw 轴控制延后 dt_control × N
 
@@ -79,7 +144,7 @@ rc.set(true,   // auto_aim_enable
 
 若需调整 yaw 延迟时长，改变构造参数 `N`（或 `dt_control`）即可：延迟 = `dt_control × N`。
 
-### 2.3 获取统一状态（按来源分组）
+### 3.3 获取统一状态（按来源分组）
 
 ```cpp
 auto st = rc.getState();
@@ -89,22 +154,23 @@ st.imu    // IMU 原始数据：gx/gy/gz、ax/ay/az、euler_yaw/pitch/roll、dt_
 st.fused  // 融合滤波器输出：yaw_pos（解卷绕多圈）、yaw_rate（高频）、chassis_yaw/pitch/roll、imu_yaw_unwrapped
 st.mpc    // MPC 状态：yaw_target_angle / yaw_target_velocity / yaw_torque / delayed_target
           //   + integral      （当前积分值，积分补偿累积量）
+          //   + loop_fps      （McuMpcController 后台 loop 真实帧率，滑动平均，帧/秒）
           //   + ref_sequence  （最新一次运算的目标位置序列，N 个）
           //   + pred_sequence （最新一次运算的预测位置序列，N 个，与 ref 逐点对应）
 ```
 
-### 2.4 完整示例
+### 3.4 完整示例
 
 ```cpp
-#include "RobotController.h"
+#include "tcs/RobotController.h"
 #include <cmath>
 #include <thread>
 #include <chrono>
 
 int main() {
-    RobotController rc(0.01, 20, 0.016541, 0.097297, 0.0321, 0.0,
-                       1.0, 40.0, 5.0, 0.01, 0.1, 30,
-                       0.01, McuDataPreprocessor::LinearParams{});
+    tcs::RobotController rc(0.01, 20, 0.016541, 0.097297, 0.0321, 0.0,
+                            1.0, 40.0, 5.0, 0.01, 0.1, 30,
+                            0.01, 0.01, tcs::McuDataPreprocessor::LinearParams{});
     // 等待融合就绪
     while (!rc.getState().fused.valid)
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -120,28 +186,31 @@ int main() {
 }
 ```
 
-更完整的正弦双轴演示见 `src/control_demo.cpp`。
+更完整的正弦单轴演示见 `src/control_demo.cpp`（其中演示了 `using namespace tcs;` 的写法）。
 
 ---
 
-## 3. 其他可运行程序
+## 4. 其他可运行程序
 
-### 3.1 C++ 程序（`build/`）
+### 4.1 C++ 程序（`build/`）
 
 | 程序 | 说明 |
 |---|---|
-| **`control_demo`** | 使用 `RobotController` 的正弦控制演示：3s 周期正弦控制 `target_yaw`（±30°）与 `pitch_target_angle`（−10°~+20°），两者相位差 90°。Ctrl+C 退出 |
-| **`test_serial`** | 串口通信自检：打印 MCU 回传的 yaw/pitch/温度/底盘 IMU 等字段，验证通信链路 |
-| **`test_control`** | 只接收 IMU/MCU 数据，显示融合姿态；圆锥台表示底盘，长方体表示云台，白色线框表示 IMU 实测朝向 |
-| **`pitch_calibration`** | pitch 轴标定工具：采集 IMU pitch 与 MCU pitch 对应关系，用于生成 `McuDataPreprocessor` 的线性标定参数 |
+| **`control_demo`** | 使用 `tcs::RobotController` 的正弦控制演示：3s 周期正弦控制 `target_yaw`（±30°）与 `pitch_target_angle`（−10°~+20°），两者相位差 90°。Ctrl+C 退出 |
+| **`tcs_test_serial`** | 串口通信自检：打印 MCU 回传的 yaw/pitch/温度/底盘 IMU 等字段，验证通信链路 |
+| **`test_control`** | 只接收 IMU/MCU 数据，显示融合姿态；圆锥台表示底盘，长方体表示云台，白色线框表示安装补偿后的 IMU 朝向 |
+| **`pitch_calibration`** | pitch 轴标定工具：采集 IMU pitch 与 MCU pitch 对应关系，用于生成 `tcs::McuDataPreprocessor` 的线性标定参数 |
+| **`tcs_test_c_api_smoke`** | C ABI / 命名空间自检（`ctest -R tcs_c_api_smoke`）：协议布局、CRC 数值、C API 句柄与 MPC 求解器、`tcs::RobotController` 全链路，无硬件可跑 |
 
-运行姿态调试程序：`./build/test_control`。鼠标左键拖动旋转视角，滚轮缩放，`R` 重置视角，`F` 显示融合姿态，`S` 显示严格反解姿态，`Esc` 退出。右侧显示 IMU、原始 MCU、标定后的 MCU、融合与严格反解数据，以及接收计数和数据年龄；超过 0.5 秒未更新时显示 `STALE`。
+运行姿态调试程序：`./build/test_control`。鼠标左键拖动旋转视角，滚轮缩放，`R` 重置视角，`F` 显示融合姿态，`S` 显示严格反解姿态，`Esc` 退出。右侧显示安装补偿后的 IMU、原始 MCU、标定后的 MCU、融合与严格反解数据，以及接收计数和数据年龄；超过 0.5 秒未更新时显示 `STALE`。
 
-模型使用 ZXY 旋转约定，pitch 绕 x 轴，云台朝向为 +Y；IMU 坐标轴假设与云台坐标轴方向一致。车辆世界位置固定，几何尺寸与关节高度为示意值，集中定义在 `src/test_control.cpp` 开头。程序没有串口发送调用。默认字体路径为 `/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf`，可以通过 `--font PATH` 指定；`--frames N --screenshot PATH.bmp` 可在运行指定帧数后保存窗口截图并退出。
+模型使用 ZXY 旋转约定，pitch 绕 x 轴，云台朝向为 +Y。`IS_INFANTRY_2=ON` 时，IMU 安装补偿自动应用于融合输入和白色线框。车辆世界位置固定，几何尺寸与关节高度为示意值，集中定义在 `src/test_control.cpp` 开头。程序没有串口发送调用。默认字体路径为 `/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf`，可以通过 `--font PATH` 指定；`--frames N --screenshot PATH.bmp` 可在运行指定帧数后保存窗口截图并退出。
 
-查看模型效果：`./build/test_control --demo`。该模式使用模拟的底盘 yaw、云台 yaw/pitch 及相应 IMU 数据驱动实际融合滤波器，窗口标注 `DEMO`，不打开串口。
+查看模型效果：`./build/test_control --demo`。该模式按照当前安装选项生成模拟 IMU 数据，经过安装补偿与实际融合滤波器后显示，窗口标注 `DEMO`，不打开串口。
 
-### 3.2 Python 脚本（`python/scripts/`，用 `PYTHONPATH=python python3 python/scripts/xxx.py` 运行）
+独立构建默认启用姿态窗口；在父工程中构建时传入 `-DTCS_BUILD_POSE_VIEWER=ON`，然后执行 `cmake --build build --target tcs_test_control`。依赖包为 `libsdl2-dev`、`libgl-dev`、`libfreetype6-dev`、`fonts-dejavu-core`。
+
+### 4.2 Python 脚本（`python/scripts/`，用 `PYTHONPATH=python python3 python/scripts/xxx.py` 运行）
 
 | 脚本 | 说明 |
 |---|---|
@@ -151,61 +220,68 @@ int main() {
 | **`collect_sysid_data.py`** | 系统辨识数据采集：按目标轨迹驱动云台，100Hz 精确采样力矩/位置/角速度到 `data/sysid_samples/` |
 | **`param_ident.py`** | 系统辨识：PyTorch 可微分仿真 + 梯度优化，拟合 J/τ_c/b/τ_d，结果在 `params/1/Identified_parameters.txt` |
 
-### 3.3 Python 底层接口（`python/torque_controller/`）
+### 4.3 Python 底层接口（`python/torque_controller/`）
 
-`RobotCommunication`（ctypes 封装 C API）提供：
+`TcsRobotCommunication`（ctypes 封装 C API，动态库为 `build/libtcs_robot_comm_c.so`）提供：
 
 ```python
-from torque_controller import RobotCommunication
-r = RobotCommunication()
+from torque_controller import TcsRobotCommunication
+r = TcsRobotCommunication()
 r.get_latest_data()          # MCU/IMU 原始数据
 r.get_fused_data()           # 融合滤波器输出（yaw_pos/yaw_rate/chassis/imu_yaw）
 r.send_to_mcu(pkt)           # 手动发送 McuSendPacket
 r.create_mpc(**kw)           # yaw MPC 求解器（返回发送值，不发送）
-r.create_mcu_mpc(**kw)       # 实车 MPC 控制封装（后台 100Hz 自动发送）
+r.create_mcu_mpc(**kw)       # 实车 MPC 控制封装（后台自动发送，周期默认 100Hz）
 ```
 
 ---
 
-## 4. 目录结构
+## 5. 目录结构
 
 ```
-include/
+include/tcs/         # 唯一对外暴露的 include 根（一律 #include "tcs/..."）
   communication/   # 通信头文件（协议/串口/预处理/融合滤波器）
   mpc/             # MPC 头文件（求解器 / yaw MPC / MCU 控制封装）
-  c_api/           # C 接口头文件
+  common/          # 通用工具（FrameRateCounter 帧率计数器）
+  c_api/           # C 接口头文件（纯 C11 + extern "C"）
   RobotController.h  # 一体化封装类
+tests/             # 自检程序（ctest 名带 tcs_ 前缀）
 src/
   communication/   # 通信实现
   mpc/             # MPC 实现
+  common/          # 通用工具实现
   c_api/           # C 接口实现
   RobotController.cpp
   control_demo.cpp / test_serial.cpp / pitch_calibration.cpp   # 工具程序
 python/
   torque_controller/   # Python ctypes 封装
   scripts/             # 控制/采集/辨识/可视化脚本
-mpc/（历史目录已并入 src/mpc + include/mpc）
+mpc/（历史目录已并入 src/mpc + include/tcs/mpc）
 ```
 
 ---
 
-## 5. 数据流
+## 6. 数据流
 
 ```
 MCU(低频) ──┐
             ├─► YawChassisFusion（IMU 高频积分 + MCU 校正）──► fused(yaw_pos/yaw_rate/chassis/imu_yaw)
 IMU(高频) ──┘
                                           │
-   target_yaw ──► RobotController::set ──► McuMpcController(后台100Hz)
+   target_yaw ──► tcs::RobotController::set ──► tcs::McuMpcController(后台loop,周期=mpc_loop_period)
                                           │  参考序列(延迟dt*N + 底盘修正) ──► MPC 求解
                                           ▼
                                    McuSendPacket ──► MCU 执行
 ```
 
-## 6. 注意事项
+## 7. 注意事项
 
 - **yaw 轴控制延后 `dt_control × N`（默认 0.2s）**：`set` 的 `target_yaw` 经内部延迟缓冲后才进入 MPC 参考序列；`pitch_target_angle` 等其余发送参数直接透传、无延迟（详见 2.2 节重点说明）
 - `target_yaw` 为多圈连续角度（非 wrap 到 [−π,π]），`set` 内自动卷绕到与 `imu_yaw_unwrapped` 差最小的等效角
 - 融合滤波器当前假设底盘与地面平行（`chassis_imu_yaw/omega` 直接利用）
-- 实机使用前建议先跑 `test_serial` 确认通信、再跑 `control_demo` 低幅验证，最后用 `pygame_control_mpc.py` 交互控制
-- 辨识参数修改后需同步更新各程序的 J/τ_c/b/τ_d（`pygame_control_mpc.py`、`control_demo.cpp`、`RobotController` 构造参数）
+- 实机使用前建议先运行 `tcs_test_serial` 确认通信，再运行 `control_demo` 验证控制，最后使用 `pygame_control_mpc.py` 交互控制。
+- 辨识参数修改后需同步更新各程序的 J/τ_c/b/τ_d（`pygame_control_mpc.py`、`control_demo.cpp`、`tcs::RobotController` 构造参数）
+- 所有 C++ 类型都在 `namespace tcs` 内（`tcs::RobotController`、`tcs::YawChassisFusion`、
+  `tcs::mcu::SendPacket` …），C ABI 符号带 `tcs_` 前缀、C 类型带 `Tcs` 前缀——与子模组
+  `tcbs` 同进程共存时不会串符号。父工程若原先写的是 `RobotController::State`，
+  现应改为 `tcs::RobotController::State`

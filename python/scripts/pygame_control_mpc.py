@@ -2,7 +2,7 @@
 pygame_control_mpc.py — 使用 pygame 鼠标控制 yaw（MPC）/ pitch 的实车控制程序
                    结构仿照 pygame_control.py（同时获取和绘制 yaw 与 pitch）
 
-- yaw: MPC 力矩控制（闭环完全在 C++：McuMpcController 后台 100Hz 线程求解并发送）。
+- yaw: MPC 力矩控制（闭环完全在 C++：tcs::McuMpcController 后台 100Hz 线程求解并发送）。
        目标 yaw 可选用 TrajectoryPlanner + StepRefinementWrapper 平滑（USE_PLANNER）；
        目标延迟 dt*N 步由 C++ 内部维护（delayed_target）。
        目标 yaw 速度 = mpc 解算的 yaw_target_velocity；Torque = mpc 的 yaw_torque。
@@ -16,7 +16,7 @@ pygame_control_mpc.py — 使用 pygame 鼠标控制 yaw（MPC）/ pitch 的实�
 
 import sys, os, math, time
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from torque_controller import RobotCommunication
+from torque_controller import TcsRobotCommunication
 from scripts.trajectory_planner import TrajectoryPlanner, StepRefinementWrapper
 
 import pygame
@@ -59,6 +59,11 @@ TAU_D   = 0.0            # tau_d 设为 0
 # ================== 约束 ==================
 MAX_TORQUE      = 1.0    # 最大力矩 (N·m)
 MAX_TORQUE_RATE = 40.0   # 最大力矩变化率 (N·m/s)
+
+# ================== MPC 目标函数 ==================
+# 位置跟踪误差: 平滑绝对值 sqrt(err²+a)（a 很小正数，err≈0 附近连续可导，
+# 大误差近似 |err|，不再按平方放大）；控制量与力矩变化率仍为均方误差
+ABS_SMOOTH_EPS  = 1e-6
 
 # ================== 波形图参数（与 pygame_control.py 一致）==================
 WAVE_LEFT   = 80
@@ -247,7 +252,7 @@ def main():
     font = pygame.font.Font(None, 26)
 
     # 通信 + 融合滤波器
-    robot = RobotCommunication()
+    robot = TcsRobotCommunication()
     print("Waiting for fused data (IMU + MCU yaw)...")
     while True:
         fused = robot.get_fused_data()
@@ -262,6 +267,7 @@ def main():
         J=J, tau_c=TAU_C, b=B_FRIC, tau_d=TAU_D,
         max_torque=MAX_TORQUE, max_torque_rate=MAX_TORQUE_RATE,
         Q=5.0, R=0.01, Rd=0.1, max_iter=30,
+        smooth_eps=ABS_SMOOTH_EPS,
     )
 
     # 可选：yaw 目标平滑（与 pygame_control.py 相同）

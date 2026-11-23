@@ -3,16 +3,20 @@
 // McuCommunication : 与电控（MCU）通信，CRC8，前导 0x42 0x52 0x02
 // ImuCommunication  : 与 IMU 模块通信，CRC32，前导 0xA7 0xB6 0xC5
 //
-#ifndef COMMUNICATIONS_HPP
-#define COMMUNICATIONS_HPP
+#ifndef TCS_COMMUNICATIONS_HPP
+#define TCS_COMMUNICATIONS_HPP
 
-#include "SerialProtocol.hpp"
-#include "Protocol.hpp"
-#include "CRC.h"
-#include "McuDataPreprocessor.h"
-#include "FusionFilter.h"
+#include "tcs/communication/SerialProtocol.hpp"
+#include "tcs/communication/Protocol.hpp"
+#include "tcs/communication/CRC.h"
+#include "tcs/communication/McuDataPreprocessor.h"
+#include "tcs/communication/FusionFilter.h"
+#include "tcs/communication/ImuMountCompensation.h"
+#include <utility>
 #include <string>
 #include <mutex>
+
+namespace tcs {
 
 // ── 端口筛选函数 ──
 
@@ -38,13 +42,23 @@ using McuCommunication = SerialProtocol<
 >;
 
 // IMU 通信：CRC32，前导字节见 imu::SendPacket / imu::ReceivePacket
-using ImuCommunication = SerialProtocol<
+using ImuSerialProtocol = SerialProtocol<
     imu::SendPacket,
     imu::ReceivePacket,
     CRC32_Calculate,
     imuPortSelector,
     imu::PREAMBLE_SIZE
 >;
+
+class ImuCommunication : public ImuSerialProtocol {
+public:
+    explicit ImuCommunication(std::function<void(const imu::ReceivePacket&)> callback,
+                              bool auto_start = true)
+        : ImuSerialProtocol(
+              [callback = std::move(callback)](const imu::ReceivePacket& packet) {
+                  callback(compensateImuMount(packet));
+              }, auto_start) {}
+};
 
 // ============================================================================
 // RobotCommunication — 组合 MCU 与 IMU 通信，封装数据预处理
@@ -79,7 +93,7 @@ public:
         imu_serial_.stopWorker();
     }
 
-    // 获取最新数据（MCU 数据已在回调中预处理）
+    // 获取最新数据（MCU 已完成标定映射，IMU 已按安装配置补偿）
     LatestData getLatestData() {
         LatestData data;
         {
@@ -132,7 +146,7 @@ public:
     }
 
 private:
-    // ── 回调：存储原始数据 + 喂融合滤波器 ──
+    // ── 回调：存储安装补偿后的 IMU 数据并更新融合滤波器 ──
     void onImuReceive(const imu::ReceivePacket& packet) {
         {
             std::lock_guard<std::mutex> lock(imu_mutex_);
@@ -172,4 +186,6 @@ private:
     YawChassisFusion   fusion_;   // IMU 高频 + MCU 低频融合滤波器
 };
 
-#endif // COMMUNICATIONS_HPP
+
+} // namespace tcs
+#endif // TCS_COMMUNICATIONS_HPP

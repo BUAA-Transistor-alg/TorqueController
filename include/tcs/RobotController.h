@@ -1,11 +1,13 @@
-#ifndef ROBOT_CONTROLLER_H
-#define ROBOT_CONTROLLER_H
+#ifndef TCS_ROBOT_CONTROLLER_H
+#define TCS_ROBOT_CONTROLLER_H
 
 #include <vector>
 #include <cstdint>
 #include <stdexcept>
-#include "communication/Communications.hpp"
-#include "mpc/mcu_mpc_controller.h"
+#include "tcs/communication/Communications.hpp"
+#include "tcs/mpc/mcu_mpc_controller.h"
+
+namespace tcs {
 
 // ============================================================================
 // RobotController — 一体化控制封装
@@ -13,7 +15,7 @@
 // 内部完成：
 //   - 通信接口建立（RobotCommunication：MCU + IMU 串口 + 融合滤波器）
 //   - yaw MPC 控制封装建立（McuMpcController，含 YawMpcController 与
-//     后台 100Hz 发送线程）
+//     后台发送线程，周期由构造参数 mpc_loop_period 指定）
 //
 // 外部用法：实例化一个 RobotController 即可完全控制——
 //   - getState()：统一获取一个按来源分组的结构体（mcu / imu 原始数据、
@@ -77,6 +79,8 @@ public:
         double yaw_torque = 0.0;            // 最新控制力矩
         double delayed_target = 0.0;        // 当前参考（延迟 dt*N 步的目标）
         double integral = 0.0;              // 当前积分值（积分补偿累积量）
+        double loop_fps = 0.0;              // McuMpcController 后台 loop 真实帧率（帧/秒）
+        uint64_t ticks_since_set = 0;       // 距上一次 mcu_mpc_.set() 已过去的后台 loop 次数（loop 每循环一次 +1）
         std::vector<double> ref_sequence;   // 最新一次运算的目标位置序列（N 个）
         std::vector<double> pred_sequence;  // 最新一次运算的预测位置序列（N 个，不含当前）
     };
@@ -96,21 +100,25 @@ public:
 
     // 建立通信 + MPC 控制封装（dt_control 控制周期、N 预测步数、MPC 参数；
     // integral_gain：yaw 力矩积分补偿比例系数（必须传参）；
+    // mpc_loop_period：McuMpcController 后台 loop 周期（秒，必须传参，无默认值）；
     // mcu_linear_params：MCU 数据线性映射标定参数（默认构造为当前标定值）；
-    // sequence_mode=true 选择序列模式）
+    // sequence_mode=true 选择序列模式；
+    // smooth_eps：位置跟踪误差平滑绝对值常数 a（代价 = Q*sqrt(err²+a)，默认 1e-6））
     RobotController(double dt_control, int N,
                     double J, double tau_c, double b, double tau_d,
                     double max_torque, double max_torque_rate,
                     double Q, double R, double Rd, int max_iter,
                     double integral_gain,
+                    double mpc_loop_period,
                     const McuDataPreprocessor::LinearParams& mcu_linear_params,
-                    bool sequence_mode = false);
+                    bool sequence_mode = false,
+                    double smooth_eps = 1e-6);
     ~RobotController();
 
     // 统一获取：mcu/imu 原始 + 融合输出 + mpc 状态（含参考/预测序列与积分值）
     State getState();
 
-    // 直通 McuMpcController::set（单目标模式；后台 100Hz 线程求解并发送 MCU）
+    // 直通 McuMpcController::set（单目标模式；后台线程按 mpc_loop_period 周期求解并发送 MCU）
     // integral_enable：本步是否启用 yaw 力矩积分补偿（必须传参；true 时
     //   yaw_torque 加积分后限幅，false 时积分清空为 0）。
     // 序列模式下调用本接口抛出 std::runtime_error
@@ -134,4 +142,6 @@ private:
     McuMpcController   mcu_mpc_;
 };
 
-#endif // ROBOT_CONTROLLER_H
+
+} // namespace tcs
+#endif // TCS_ROBOT_CONTROLLER_H

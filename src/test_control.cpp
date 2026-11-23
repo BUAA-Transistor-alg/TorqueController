@@ -1,4 +1,4 @@
-#include "communication/Communications.hpp"
+#include "tcs/communication/Communications.hpp"
 
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_opengl.h>
@@ -15,6 +15,12 @@
 #include <vector>
 
 namespace {
+namespace imu = tcs::imu;
+namespace mcu = tcs::mcu;
+using tcs::ImuCommunication;
+using tcs::McuCommunication;
+using tcs::McuDataPreprocessor;
+using tcs::YawChassisFusion;
 constexpr double pi = 3.14159265358979323846;
 constexpr double degrees = 180.0 / pi;
 using Clock = std::chrono::steady_clock;
@@ -117,6 +123,14 @@ public:
         imu.gy = static_cast<float>((chassis_rate + yaw_rate) * std::sin(pitch));
         imu.gz = static_cast<float>((chassis_rate + yaw_rate) * std::cos(pitch));
         imu.dt_one_tenth_ms = 160;
+        // 根据编译配置生成传感器坐标系数据，再通过实际安装补偿路径。
+        auto sensor = imu;
+#if IS_INFANTRY_2
+        sensor.gx = -sensor.gx;
+        sensor.gz = -sensor.gz;
+        sensor.euler_roll -= pi;
+#endif
+        imu = tcs::compensateImuMount(sensor);
         auto& raw = state_.raw_mcu;
         const auto params = McuDataPreprocessor::defaultParams();
         raw.yaw_angle = yaw;
@@ -393,7 +407,11 @@ void draw(const Snapshot& s, const Font& font, int width, int height,
     line("Drag: orbit | Wheel: zoom | R: reset view");
     line("F: fused | S: strict | Esc: exit");
     line("Schematic dimensions; world position fixed");
-    line("IMU axes assumed parallel to gimbal axes");
+#if IS_INFANTRY_2
+    line("IMU mount: Y 180 deg compensation ON");
+#else
+    line("IMU mount: standard installation");
+#endif
     glDisable(GL_BLEND);
 }
 

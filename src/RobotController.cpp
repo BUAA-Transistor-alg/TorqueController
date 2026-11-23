@@ -1,20 +1,22 @@
-#include "RobotController.h"
+#include "tcs/RobotController.h"
+
+namespace tcs {
 
 RobotController::RobotController(double dt_control, int N,
                                  double J, double tau_c, double b, double tau_d,
                                  double max_torque, double max_torque_rate,
                                  double Q, double R, double Rd, int max_iter,
-                                 double integral_gain,
+                                 double integral_gain, double mpc_loop_period,
                                  const McuDataPreprocessor::LinearParams& mcu_linear_params,
-                                 bool sequence_mode)
+                                 bool sequence_mode, double smooth_eps)
     : sequence_mode_(sequence_mode),
       comm_(mcu_linear_params),
       mcu_mpc_(&comm_, dt_control, N,
                J, tau_c, b, tau_d,
                max_torque, max_torque_rate,
-               Q, R, Rd, max_iter, integral_gain)
+               Q, R, Rd, max_iter, integral_gain, mpc_loop_period, smooth_eps)
 {
-    mcu_mpc_.start();   // 启动后台 100Hz 发送线程
+    mcu_mpc_.start();   // 启动后台发送线程（周期 = mpc_loop_period）
 }
 
 RobotController::~RobotController() {
@@ -24,7 +26,7 @@ RobotController::~RobotController() {
 RobotController::State RobotController::getState() {
     State st;
 
-    // ── MCU / IMU 原始数据 ──
+    // ── MCU 标定映射数据 / IMU 安装补偿数据 ──
     auto raw = comm_.getLatestData();
     if (raw.mcu_valid) {
         const auto& m = raw.mcu_packet;
@@ -80,6 +82,8 @@ RobotController::State RobotController::getState() {
     st.mpc.yaw_torque          = m.yaw_torque;
     st.mpc.delayed_target      = m.delayed_target;
     st.mpc.integral            = m.integral;
+    st.mpc.loop_fps            = m.loop_fps;
+    st.mpc.ticks_since_set     = m.ticks_since_set;
     st.mpc.ref_sequence        = m.ref_sequence;
     st.mpc.pred_sequence       = m.pred_sequence;
 
@@ -109,3 +113,5 @@ void RobotController::set(bool auto_aim_enable, bool yaw_torque_only_mode,
     mcu_mpc_.set(auto_aim_enable, yaw_torque_only_mode,
                  target_yaw_seq, pitch_seq, fire_seq, integral_enable);
 }
+
+} // namespace tcs

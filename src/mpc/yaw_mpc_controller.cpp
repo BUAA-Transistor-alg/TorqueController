@@ -1,16 +1,18 @@
-#include "mpc/yaw_mpc_controller.h"
+#include "tcs/mpc/yaw_mpc_controller.h"
 
 #include <algorithm>
+
+namespace tcs {
 
 YawMpcController::YawMpcController(RobotCommunication* comm, double dt_control, int N,
                                    double J, double tau_c, double b, double tau_d,
                                    double max_torque, double max_torque_rate,
                                    double Q, double R, double Rd, int max_iter,
-                                   double integral_gain)
+                                   double integral_gain, double smooth_eps)
     : comm_(comm), dt_(dt_control), N_(N), integral_gain_(integral_gain),
       // 与实车脚本一致：MPC 的 dt_sim = dt_control（每个控制周期一个仿真子步）
       mpc_(dt_control, dt_control, J, tau_c, b, tau_d,
-           max_torque, max_torque_rate, N, Q, R, Rd, max_iter)
+           max_torque, max_torque_rate, N, Q, R, Rd, max_iter, smooth_eps)
 {}
 
 // 单目标 step：目标延迟缓冲（最多 N 个，延迟 dt*N）后求解
@@ -94,3 +96,5 @@ YawMpcController::Result YawMpcController::solve(bool integral_enable) {
 
     return r;
 }
+
+} // namespace tcs

@@ -33,7 +33,7 @@ class DifferentiableYawSimEnv:
         omega = omega_init.clone().detach()
         theta_list = []
         omega_list = []
-        lam = 1e4
+        lam = 100.0
         for i in range(N):
             soft_sign = torch.tanh(lam * omega)
             tau_f = -soft_sign * self.tau_c - self.b * omega

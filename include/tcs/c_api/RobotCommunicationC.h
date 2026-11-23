@@ -1,15 +1,15 @@
 // RobotCommunicationC.h — RobotCommunication 的 C 语言 API
 //
 // 使用方式（Python ctypes / C 程序）:
-//   1. robot_comm_create() 创建句柄
-//   2. robot_comm_get_latest_data() 获取最新 IMU + MCU 数据
-//   3. robot_comm_send_to_mcu / send_to_imu 发送数据
-//   4. robot_comm_destroy() 销毁
+//   1. tcs_robot_comm_create() 创建句柄
+//   2. tcs_robot_comm_get_latest_data() 获取最新 IMU + MCU 数据
+//   3. tcs_robot_comm_send_to_mcu / send_to_imu 发送数据
+//   4. tcs_robot_comm_destroy() 销毁
 //
 // 注意：所有结构体为 #pragma pack(1)，与 Protocol.hpp 内存布局严格一致
 
-#ifndef ROBOT_COMMUNICATION_C_H
-#define ROBOT_COMMUNICATION_C_H
+#ifndef TCS_ROBOT_COMMUNICATION_C_H
+#define TCS_ROBOT_COMMUNICATION_C_H
 
 #include <stdint.h>
 #include <stdbool.h>
@@ -38,7 +38,7 @@ typedef struct {
     float   yaw_target_velocity;
     float   yaw_torque;
     uint8_t crc8;
-} McuSendPacket_C;
+} TcsMcuSendPacket_C;
 
 // ── MCU 接收包 ──
 typedef struct {
@@ -58,7 +58,7 @@ typedef struct {
     uint8_t yaw_temperature;     // yaw轴电机温度
     uint8_t fold;                // 0 表示云台折叠，1 表示云台升起
     uint8_t crc8;
-} McuReceivePacket_C;
+} TcsMcuReceivePacket_C;
 
 // ── IMU 发送包 ──
 typedef struct {
@@ -67,7 +67,7 @@ typedef struct {
     uint8_t  frame_header3;      // = 0xC5
     uint8_t  data_size;          // = 0
     uint32_t crc32;
-} ImuSendPacket_C;
+} TcsImuSendPacket_C;
 
 // ── IMU 接收包 ──
 typedef struct {
@@ -86,17 +86,17 @@ typedef struct {
     double   euler_roll;
     uint32_t dt_one_tenth_ms;
     uint32_t crc32;
-} ImuReceivePacket_C;
+} TcsImuReceivePacket_C;
 
 #pragma pack(pop)
 
 // ── 聚合数据 ──
 typedef struct {
     bool              imu_valid;
-    ImuReceivePacket_C imu_packet;
+    TcsImuReceivePacket_C imu_packet;
     bool              mcu_valid;
-    McuReceivePacket_C mcu_packet;
-} RobotLatestData_C;
+    TcsMcuReceivePacket_C mcu_packet;
+} TcsRobotLatestData_C;
 
 // ── 融合输出（IMU 高频 + MCU 低频）──
 typedef struct {
@@ -107,7 +107,7 @@ typedef struct {
     double chassis_pitch;        // 底盘 world 系 pitch (rad)
     double chassis_roll;         // 底盘 world 系 roll (rad)
     double imu_yaw_unwrapped;    // IMU euler yaw 解卷绕 (rad)
-} RobotFusedData_C;
+} TcsRobotFusedData_C;
 
 // ── 严格反解数据包（独立输出）──
 // 所有角度 wrap 到 (-π, π]；始终有效，缺失数据以 0 参与；
@@ -121,92 +121,131 @@ typedef struct {
     double chassis_yaw;          // 严格反解底盘欧拉角（wrap 后）
     double chassis_pitch;
     double chassis_roll;
-} RobotStrictPose_C;
+} TcsRobotStrictPose_C;
 
 // ── 不透明句柄 ──
-typedef struct RobotCommHandle RobotCommHandle;
+typedef struct TcsRobotCommHandle TcsRobotCommHandle;
 
 // ============================================================================
 // API 函数
 // ============================================================================
 
 // 创建通信句柄（自动启动 IMU 和 MCU 的串口监听）
-RobotCommHandle* robot_comm_create(void);
+TcsRobotCommHandle* tcs_robot_comm_create(void);
 
 // 销毁通信句柄
-void robot_comm_destroy(RobotCommHandle* handle);
+void tcs_robot_comm_destroy(TcsRobotCommHandle* handle);
 
 // 获取最新 IMU 和 MCU 数据（MCU 接收数据会在此处做预处理）
-RobotLatestData_C robot_comm_get_latest_data(RobotCommHandle* handle);
+TcsRobotLatestData_C tcs_robot_comm_get_latest_data(TcsRobotCommHandle* handle);
 
 // 获取融合输出（高频 yaw 位置/速度 + 底盘姿态）
-RobotFusedData_C robot_comm_get_fused_data(RobotCommHandle* handle);
+TcsRobotFusedData_C tcs_robot_comm_get_fused_data(TcsRobotCommHandle* handle);
 
 // 获取严格反解数据包（独立输出，始终有效）
-RobotStrictPose_C robot_comm_get_strict_pose(RobotCommHandle* handle);
+TcsRobotStrictPose_C tcs_robot_comm_get_strict_pose(TcsRobotCommHandle* handle);
 
 // 发送 MCU 数据（发送前做预处理）
-bool robot_comm_send_to_mcu(RobotCommHandle* handle, const McuSendPacket_C* packet);
+bool tcs_robot_comm_send_to_mcu(TcsRobotCommHandle* handle, const TcsMcuSendPacket_C* packet);
 
 // 发送 IMU 数据（无预处理）
-bool robot_comm_send_to_imu(RobotCommHandle* handle, const ImuSendPacket_C* packet);
+bool tcs_robot_comm_send_to_imu(TcsRobotCommHandle* handle, const TcsImuSendPacket_C* packet);
 
 // 停止通信
-void robot_comm_stop(RobotCommHandle* handle);
+void tcs_robot_comm_stop(TcsRobotCommHandle* handle);
 
 // ── yaw MPC 求解（参考序列 + 求解，不发送；返回将要发送的值）──
-typedef void* YawMpcHandle_C;
+typedef void* TcsYawMpcHandle_C;
 
 typedef struct {
     double yaw_target_angle;    // 预测位置 → 发送 yaw_target_angle (rad)
     double yaw_target_velocity; // 预测速度 → 发送 yaw_target_velocity (rad/s)
     double yaw_torque;          // 控制力矩 → 发送 yaw_torque (N·m)
     double delayed_target;      // 当前参考（延迟 dt*N 步的目标），供显示
-} YawMpcStepResult_C;
+} TcsYawMpcStepResult_C;
 
-// 创建 yaw MPC 求解器（comm: robot_comm_create 返回的句柄）
-YawMpcHandle_C yaw_mpc_create(RobotCommHandle* comm, double dt_control, int N,
+// 创建 yaw MPC 求解器（comm: tcs_robot_comm_create 返回的句柄）
+// smooth_eps: 位置跟踪误差平滑绝对值常数 a（代价 = Q*sqrt(err²+a)，很小正数）
+TcsYawMpcHandle_C tcs_yaw_mpc_create(TcsRobotCommHandle* comm, double dt_control, int N,
                               double J, double tau_c, double b, double tau_d,
                               double max_torque, double max_torque_rate,
-                              double Q, double R, double Rd, int max_iter);
+                              double Q, double R, double Rd, int max_iter,
+                              double smooth_eps);
 
 // 销毁
-void yaw_mpc_destroy(YawMpcHandle_C handle);
+void tcs_yaw_mpc_destroy(TcsYawMpcHandle_C handle);
 
 // 每步调用：只传目标位置（内部读融合状态、维护延迟参考序列、求解）
 // 返回将要发送的 yaw_target_angle / yaw_target_velocity / yaw_torque（不发送）
-YawMpcStepResult_C yaw_mpc_step(YawMpcHandle_C handle, double target_yaw);
+TcsYawMpcStepResult_C tcs_yaw_mpc_step(TcsYawMpcHandle_C handle, double target_yaw);
 
-// ── 实车 MCU 控制封装（设置 + 后台 100Hz 发送线程）──
-typedef void* McuMpcHandle_C;
+// ── 实车 MCU 控制封装（设置 + 后台发送线程，周期默认 100Hz）──
+typedef void* TcsMcuMpcHandle_C;
 
 typedef struct {
     double yaw_target_angle;    // 最新预测位置 (rad)
     double yaw_target_velocity; // 最新预测速度 (rad/s)
     double yaw_torque;          // 最新控制力矩 (N·m)
     double delayed_target;      // 当前参考（延迟 dt*N 步的目标）
-} McuMpcState_C;
+} TcsMcuMpcState_C;
 
-// 创建封装并自动启动后台 100Hz 发送线程
-McuMpcHandle_C mcu_mpc_create(RobotCommHandle* comm, double dt_control, int N,
+// 创建封装并自动启动后台发送线程（周期默认 100Hz）
+// smooth_eps: 位置跟踪误差平滑绝对值常数 a（代价 = Q*sqrt(err²+a)，很小正数）
+TcsMcuMpcHandle_C tcs_mcu_mpc_create(TcsRobotCommHandle* comm, double dt_control, int N,
                               double J, double tau_c, double b, double tau_d,
                               double max_torque, double max_torque_rate,
-                              double Q, double R, double Rd, int max_iter);
+                              double Q, double R, double Rd, int max_iter,
+                              double smooth_eps);
 
 // 销毁（停止并 join 后台线程）
-void mcu_mpc_destroy(McuMpcHandle_C handle);
+void tcs_mcu_mpc_destroy(TcsMcuMpcHandle_C handle);
 
 // 设置发送参数 + mpc 目标（target_yaw 给 mpc，其余由封装类维护；
 // target_yaw 自动转换到与 imu_yaw_unwrapped 同一圈内的值）
-void mcu_mpc_step(McuMpcHandle_C handle,
+void tcs_mcu_mpc_step(TcsMcuMpcHandle_C handle,
                   uint8_t auto_aim_enable, uint8_t yaw_torque_only_mode,
                   double target_yaw, float pitch_target_angle, uint8_t fire);
 
 // 获取最新 mpc 结果（供显示）
-McuMpcState_C mcu_mpc_get_state(McuMpcHandle_C handle);
+TcsMcuMpcState_C tcs_mcu_mpc_get_state(TcsMcuMpcHandle_C handle);
+
+// ── 直接暴露 MPCController（纯求解器，不依赖通信；供仿真/离线求解）──
+typedef void* TcsMpcControllerHandle_C;
+
+typedef struct {
+    double torque;  // 第一步控制力矩 (N·m)
+    double theta;   // 第一步预测位置 (rad)
+    double omega;   // 第一步预测速度 (rad/s)
+} TcsMpcStepResult_C;
+
+// 创建纯 MPC 求解器（dt_sim 通常与 dt_control 相同；模型:
+//   J*dω/dt = τ - τ_c*tanh(λ·ω) - b·ω + τ_d，λ=100）
+// smooth_eps: 位置跟踪误差平滑绝对值常数 a（代价 = Q*sqrt(err²+a)，很小正数）
+TcsMpcControllerHandle_C tcs_mpc_controller_create(double dt_control, double dt_sim,
+                                            double J, double tau_c, double b, double tau_d,
+                                            double max_torque, double max_torque_rate,
+                                            int N, double Q, double R, double Rd, int max_iter,
+                                            double smooth_eps);
+
+// 销毁求解器
+void tcs_mpc_controller_destroy(TcsMpcControllerHandle_C handle);
+
+// 每步求解：theta/omega 为当前状态，theta_ref 为未来 N 个控制周期的参考序列
+// （长度需 ≥ N）；返回第一步控制力矩与第一步预测状态（不发送）
+TcsMpcStepResult_C tcs_mpc_controller_step(TcsMpcControllerHandle_C handle,
+                                    double theta, double omega,
+                                    const double* theta_ref, int ref_len);
+
+// 获取最近一次 step 的参考序列 / 预测位置序列（各 N 个，写入 out，
+// max_len 为 out 容量；返回实际写入的个数）
+int tcs_mpc_controller_get_last_ref(TcsMpcControllerHandle_C handle, double* out, int max_len);
+int tcs_mpc_controller_get_last_pred(TcsMpcControllerHandle_C handle, double* out, int max_len);
+
+// 重置求解器内部状态（热启动序列、上次力矩、参考/预测缓存）
+void tcs_mpc_controller_reset(TcsMpcControllerHandle_C handle);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif // ROBOT_COMMUNICATION_C_H
+#endif // TCS_ROBOT_COMMUNICATION_C_H

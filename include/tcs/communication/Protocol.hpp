@@ -2,6 +2,9 @@
 #include <cstdint>
 #include <cstddef>
 
+// 命名空间: tcs::mcu（电控协议）/ tcs::imu（IMU 协议）
+namespace tcs {
+
 // ============================================================================
 // MCU (电控) 通信协议
 // ============================================================================
@@ -47,7 +50,6 @@ struct ReceivePacket
     uint8_t fold;                       // 0 表示云台折叠，1 表示云台升起；无折叠机构的车辆发送 1
     uint8_t crc8;
 };
-
 #pragma pack(pop)
 
 } // namespace mcu
@@ -92,3 +94,5 @@ struct ReceivePacket
 #pragma pack(pop)
 
 } // namespace imu
+
+} // namespace tcs

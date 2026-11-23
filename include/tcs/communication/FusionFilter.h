@@ -1,7 +1,9 @@
-#ifndef FUSION_FILTER_H
-#define FUSION_FILTER_H
+#ifndef TCS_FUSION_FILTER_H
+#define TCS_FUSION_FILTER_H
 
 #include <mutex>
+
+namespace tcs {
 
 // ============================================================================
 // YawChassisFusion — 高频 yaw 轴与底盘姿态融合滤波器
@@ -157,4 +159,6 @@ private:
     static constexpr double STILL_RATE = 0.05;
 };
 
-#endif // FUSION_FILTER_H
+
+} // namespace tcs
+#endif // TCS_FUSION_FILTER_H
