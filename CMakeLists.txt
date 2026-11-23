@@ -32,6 +32,17 @@ target_link_libraries(communication PUBLIC ${UDEV_LIBRARY})
 add_executable(test_serial src/test_serial.cpp)
 target_link_libraries(test_serial PRIVATE communication)
 
+# 构建只接收串口数据的姿态显示程序
+find_package(SDL2 REQUIRED)
+set(OpenGL_GL_PREFERENCE GLVND)
+find_package(OpenGL REQUIRED)
+find_package(Freetype REQUIRED)
+find_package(Threads REQUIRED)
+add_executable(test_control src/test_control.cpp)
+target_link_libraries(test_control PRIVATE communication SDL2::SDL2 OpenGL::GL
+    Freetype::Freetype Threads::Threads)
+target_compile_options(test_control PRIVATE -Wall -Wextra -Wpedantic)
+
 # 构建 Pitch 轴标定程序
 add_executable(pitch_calibration src/pitch_calibration.cpp)
 target_link_libraries(pitch_calibration PRIVATE communication)

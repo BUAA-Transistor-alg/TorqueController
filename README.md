@@ -10,7 +10,7 @@ RoboMaster 云台偏航轴（yaw）力矩控制系统：上位机通过 USB 串�
 
 ## 1. 构建
 
-依赖：Linux、libudev、Ceres（`find_package(Ceres)`）、g++（C++17）；Python 侧还需 `pygame`、`numpy`、`torch`（仅辨识用）。
+依赖：Linux、libudev、Ceres（`find_package(Ceres)`）、g++（C++17）；`test_control` 还需 SDL2、OpenGL、FreeType 开发库和 DejaVu Sans Mono 字体；Python 侧还需 `pygame`、`numpy`、`torch`（仅辨识用）。
 
 ```bash
 bash ./build.sh            # 等价于 cmake + make -j$(nproc)
@@ -132,7 +132,14 @@ int main() {
 |---|---|
 | **`control_demo`** | 使用 `RobotController` 的正弦控制演示：3s 周期正弦控制 `target_yaw`（±30°）与 `pitch_target_angle`（−10°~+20°），两者相位差 90°。Ctrl+C 退出 |
 | **`test_serial`** | 串口通信自检：打印 MCU 回传的 yaw/pitch/温度/底盘 IMU 等字段，验证通信链路 |
+| **`test_control`** | 只接收 IMU/MCU 数据，显示融合姿态；圆锥台表示底盘，长方体表示云台，白色线框表示 IMU 实测朝向 |
 | **`pitch_calibration`** | pitch 轴标定工具：采集 IMU pitch 与 MCU pitch 对应关系，用于生成 `McuDataPreprocessor` 的线性标定参数 |
+
+运行姿态调试程序：`./build/test_control`。鼠标左键拖动旋转视角，滚轮缩放，`R` 重置视角，`F` 显示融合姿态，`S` 显示严格反解姿态，`Esc` 退出。右侧显示 IMU、原始 MCU、标定后的 MCU、融合与严格反解数据，以及接收计数和数据年龄；超过 0.5 秒未更新时显示 `STALE`。
+
+模型使用 ZXY 旋转约定，pitch 绕 x 轴，云台朝向为 +Y；IMU 坐标轴假设与云台坐标轴方向一致。车辆世界位置固定，几何尺寸与关节高度为示意值，集中定义在 `src/test_control.cpp` 开头。程序没有串口发送调用。默认字体路径为 `/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf`，可以通过 `--font PATH` 指定；`--frames N --screenshot PATH.bmp` 可在运行指定帧数后保存窗口截图并退出。
+
+查看模型效果：`./build/test_control --demo`。该模式使用模拟的底盘 yaw、云台 yaw/pitch 及相应 IMU 数据驱动实际融合滤波器，窗口标注 `DEMO`，不打开串口。
 
 ### 3.2 Python 脚本（`python/scripts/`，用 `PYTHONPATH=python python3 python/scripts/xxx.py` 运行）
 
