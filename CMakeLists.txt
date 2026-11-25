@@ -169,3 +169,12 @@ find_package(Eigen3 REQUIRED)
 add_executable(tcs_test_imu_mount tests/test_imu_mount.cpp)
 target_link_libraries(tcs_test_imu_mount PRIVATE tcs::communication Eigen3::Eigen)
 add_test(NAME tcs_imu_mount COMMAND tcs_test_imu_mount)
+
+add_executable(tcs_test_feedback_delay tests/test_feedback_delay.cpp)
+target_include_directories(tcs_test_feedback_delay PRIVATE ${TCS_INCLUDE_DIR})
+target_compile_features(tcs_test_feedback_delay PRIVATE cxx_std_17)
+add_test(NAME tcs_feedback_delay COMMAND tcs_test_feedback_delay)
+
+add_executable(tcs_test_mpc_velocity_penalty tests/test_mpc_velocity_penalty.cpp)
+target_link_libraries(tcs_test_mpc_velocity_penalty PRIVATE tcs::robot_comm_c)
+add_test(NAME tcs_mpc_velocity_penalty COMMAND tcs_test_mpc_velocity_penalty)

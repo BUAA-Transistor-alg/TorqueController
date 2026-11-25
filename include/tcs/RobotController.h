@@ -103,7 +103,9 @@ public:
     // mpc_loop_period：McuMpcController 后台 loop 周期（秒，必须传参，无默认值）；
     // mcu_linear_params：MCU 数据线性映射标定参数（默认构造为当前标定值）；
     // sequence_mode=true 选择序列模式；
-    // smooth_eps：位置跟踪误差平滑绝对值常数 a（代价 = Q*sqrt(err²+a)，默认 1e-6））
+    // smooth_eps：位置跟踪误差平滑绝对值常数 a（代价 = Q*sqrt(err²+a)，默认 1e-6）
+    // feedback_delay_s：融合反馈整体滞后的估计秒数，默认 0 关闭恒速外推
+    // velocity_residual_scale：角速度残差系数，默认 0 关闭，代价权重为该系数的平方
     RobotController(double dt_control, int N,
                     double J, double tau_c, double b, double tau_d,
                     double max_torque, double max_torque_rate,
@@ -112,7 +114,9 @@ public:
                     double mpc_loop_period,
                     const McuDataPreprocessor::LinearParams& mcu_linear_params,
                     bool sequence_mode = false,
-                    double smooth_eps = 1e-6);
+                    double smooth_eps = 1e-6,
+                    double feedback_delay_s = 0.0,
+                    double velocity_residual_scale = 0.0);
     ~RobotController();
 
     // 统一获取：mcu/imu 原始 + 融合输出 + mpc 状态（含参考/预测序列与积分值）

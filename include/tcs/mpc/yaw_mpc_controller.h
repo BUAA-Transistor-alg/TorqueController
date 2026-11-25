@@ -5,6 +5,7 @@
 #include <vector>
 #include "tcs/communication/Communications.hpp"
 #include "tcs/mpc/mpc_controller.h"
+#include "tcs/mpc/feedback_delay_compensation.h"
 
 namespace tcs {
 
@@ -41,12 +42,16 @@ public:
     // N: 预测步数
     // integral_gain: 积分比例系数（默认 0.01）
     // smooth_eps: 位置跟踪误差平滑绝对值常数 a（代价 = Q*sqrt(err²+a)，默认 1e-6）
+    // feedback_delay_s: 融合反馈整体滞后的估计秒数，0 表示关闭恒速外推
+    // velocity_residual_scale: 角速度残差系数，代价权重为该系数的平方，0 关闭
     YawMpcController(RobotCommunication* comm, double dt_control, int N,
                      double J, double tau_c, double b, double tau_d,
                      double max_torque, double max_torque_rate,
                      double Q, double R, double Rd, int max_iter,
                      double integral_gain = 0.01,
-                     double smooth_eps = 1e-6);
+                     double smooth_eps = 1e-6,
+                     double feedback_delay_s = 0.0,
+                     double velocity_residual_scale = 0.0);
 
     // 每步调用：内部读状态、维护延迟参考序列、求解；返回发送所需值（不发送）
     // integral_enable=true 时启用积分补偿（第一次 step 无上一步预测，不计算）：
@@ -69,6 +74,7 @@ private:
     double dt_;
     int    N_;
     double integral_gain_;        // 积分比例系数
+    FeedbackDelayCompensation feedback_delay_;
     MPCController mpc_;
     std::deque<double> target_buf_;   // 延迟目标序列（最多 N 个，最旧在前）
 

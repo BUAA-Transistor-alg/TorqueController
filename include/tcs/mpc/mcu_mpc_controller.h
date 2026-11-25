@@ -51,7 +51,9 @@ public:
                      double Q, double R, double Rd, int max_iter,
                      double integral_gain = 0.01,
                      double loop_period = 0.01,
-                     double smooth_eps = 1e-6);
+                     double smooth_eps = 1e-6,
+                     double feedback_delay_s = 0.0,
+                     double velocity_residual_scale = 0.0);
     ~McuMpcController();
 
     void start();   // 启动后台发送线程（可重复调用，幂等）

@@ -86,6 +86,26 @@ ctest --test-dir build --output-on-failure
 
 ### 3.1 构造
 
+`RobotController` 构造函数的可选参数 `feedback_delay_s` 是融合反馈整体滞后的估计秒数，
+默认 `0.0` 关闭补偿。`control_demo.cpp` 的 `FEEDBACK_DELAY_S` 设置为 `0.010` 秒，
+启动时打印当前外推时间；手动比较延迟影响时可分别设置 `0.0`、`0.005`、`0.010` 并重新编译。
+比较期间保持目标轨迹、MPC 权重、模型参数和约束相同。
+
+补偿在构造 MPC 初始状态和参考序列前执行恒速外推：
+`theta += yaw_rate * feedback_delay_s`，
+`imu_yaw += (yaw_rate + chassis_imu_omega) * feedback_delay_s`，角速度保持原值。
+关节位置与世界系云台方向使用相同的估计时刻，底盘旋转也纳入参考转换。
+该参数依赖融合反馈整体滞后的假设，无法自动测量 MCU/IMU 各自的延迟，
+也未建立指令发送到执行的延迟模型。原始接收数据和 `getState().fused` 保留测量语义。
+恒速近似没有估计延迟期间的角加速度；已有角速度偏置也会参与外推。
+该参数目前通过 C++ 构造接口传入。
+
+构造函数末尾的 `velocity_residual_scale` 控制角速度惩罚，默认 `0.0` 关闭。
+每个预测步增加残差 `velocity_residual_scale * omega_pred[k]`，
+因此代价增加 `velocity_residual_scale² * omega_pred[k]²`；该项抑制关节角速度，目标速度为零。
+`control_demo.cpp` 通过 `VELOCITY_RESIDUAL_SCALE = 1.4` 启用，实际代价权重为 `1.96`，
+启动时显示系数与权重。残差总数为 `4*N-1`。
+
 ```cpp
 #include "tcs/RobotController.h"
 
@@ -218,7 +238,24 @@ int main() {
 | **`pygame_control.py`** | 非 MPC 演示：yaw 用 TrajectoryPlanner 平滑轨迹（位置+速度跟踪模式，力矩为 0）+ pitch，结构与上者类似 |
 | **`trajectory_viz.py`** | TrajectoryPlanner 轨迹规划器可视化（位置/速度/加速度/jerk 波形） |
 | **`collect_sysid_data.py`** | 系统辨识数据采集：按目标轨迹驱动云台，100Hz 精确采样力矩/位置/角速度到 `data/sysid_samples/` |
-| **`param_ident.py`** | 系统辨识：PyTorch 可微分仿真 + 梯度优化，拟合 J/τ_c/b/τ_d，结果在 `params/1/Identified_parameters.txt` |
+| **`param_ident.py`** | 系统辨识：PyTorch 可微分仿真 + 梯度优化，拟合 J/τ_c/b/τ_d；终端打印参数，使用 `--output-dir` 保存参数、训练历史和对比图 |
+
+在父工程根目录运行参数辨识：
+
+```bash
+python3 sub_module/TorqueController/python/scripts/param_ident.py \
+  --data-dir /path/to/samples --initial-params 0.0056 0.006 0.0001 0 \
+  --epochs 50000 --patience 1000 --output-dir analysis/sysid_fit --no-show
+```
+
+`--initial-params` 依次设置 `J`、`tau_c`、`b`、`tau_d` 的初始值，
+默认值为 `0.0056 0.006 0.0001 0`；前三个初始值必须为正。
+每轮在全部训练文件的固定 0.1 秒窗口上评估损失；累计改善至少 `--min-delta`
+（默认 `1e-6`）时重置等待计数，连续 `--patience` 轮无充分改善时结束训练。
+默认最大轮数为 50000，默认 patience 为 1000。最终返回固定窗口损失最低时的参数。
+固定窗口来自训练数据。输出目录包含 `best_parameters.json`、`fit_result.json`、
+`training_history.npz` 和 `fit_comparison.png`；
+省略 `--no-show` 时显示绘图窗口。
 
 ### 4.3 Python 底层接口（`python/torque_controller/`）
 

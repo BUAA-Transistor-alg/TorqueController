@@ -51,6 +51,10 @@ public:
         for (int k = 0; k < N; ++k) {
             residuals[idx++] = std::sqrt(mpc_->R()) * u[k];
         }
+        // 抑制预测关节角速度，残差平方后的权重为系数的平方。
+        for (int k = 0; k < N; ++k) {
+            residuals[idx++] = mpc_->velocity_residual_scale_ * omega_pred[k];
+        }
         // 力矩变化率惩罚（软约束，硬约束由 d[k] 的参数边界保证）
         for (int k = 1; k < N; ++k) {
             residuals[idx++] = std::sqrt(mpc_->Rd()) * d[k];
@@ -71,13 +75,16 @@ MPCController::MPCController(double dt_control, double dt_sim,
                              double J, double tau_c, double b, double tau_d,
                              double max_torque, double max_torque_rate,
                              int N, double Q, double R, double Rd, int max_iter,
-                             double smooth_eps)
+                             double smooth_eps, double velocity_residual_scale)
     : dt_control_(dt_control), dt_sim_(dt_sim),
       J_(J), tau_c_(tau_c), b_(b), tau_d_(tau_d),
       max_torque_(max_torque), max_torque_rate_(max_torque_rate),
       N_(N), Q_(Q), R_(R), Rd_(Rd), max_iter_(max_iter),
-      smooth_eps_(smooth_eps)
+      smooth_eps_(smooth_eps), velocity_residual_scale_(velocity_residual_scale)
 {
+    if (!std::isfinite(velocity_residual_scale_) || velocity_residual_scale_ < 0.0) {
+        throw std::invalid_argument("velocity_residual_scale must be finite and nonnegative");
+    }
     double ratio = dt_control_ / dt_sim_;
     steps_per_control_ = static_cast<int>(std::round(ratio));
     if (std::abs(steps_per_control_ * dt_sim_ - dt_control_) > 1e-9) {
@@ -111,8 +118,8 @@ MPCController::Result MPCController::step(double theta, double omega,
 
     ceres::Problem problem;
     MPCCostFunctor* cost_functor = new MPCCostFunctor(this, theta, omega, ref_copy);
-    // 残差 = 位置误差(N) + 控制量惩罚(N) + 力矩变化率惩罚(N-1)
-    int num_residuals = N_ + N_ + (N_ - 1);
+    // 残差 = 位置(N) + 力矩(N) + 角速度(N) + 力矩变化(N-1)
+    int num_residuals = 4 * N_ - 1;
     // 自动求导：动力学模板化，Ceres 用 Jet 链式法则计算雅可比（替代数值微分）
     auto* cost_function = new ceres::DynamicAutoDiffCostFunction<MPCCostFunctor>(
         cost_functor, ceres::TAKE_OWNERSHIP);

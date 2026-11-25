@@ -8,13 +8,15 @@ RobotController::RobotController(double dt_control, int N,
                                  double Q, double R, double Rd, int max_iter,
                                  double integral_gain, double mpc_loop_period,
                                  const McuDataPreprocessor::LinearParams& mcu_linear_params,
-                                 bool sequence_mode, double smooth_eps)
+                                 bool sequence_mode, double smooth_eps,
+                                 double feedback_delay_s, double velocity_residual_scale)
     : sequence_mode_(sequence_mode),
       comm_(mcu_linear_params),
       mcu_mpc_(&comm_, dt_control, N,
                J, tau_c, b, tau_d,
                max_torque, max_torque_rate,
-               Q, R, Rd, max_iter, integral_gain, mpc_loop_period, smooth_eps)
+               Q, R, Rd, max_iter, integral_gain, mpc_loop_period, smooth_eps,
+               feedback_delay_s, velocity_residual_scale)
 {
     mcu_mpc_.start();   // 启动后台发送线程（周期 = mpc_loop_period）
 }

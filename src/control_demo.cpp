@@ -28,6 +28,7 @@ constexpr double OMEGA = 2.0 * M_PI / PERIOD_S;
 
 // ── 参数（与 pygame_control_mpc.py 一致）──
 constexpr double DT_CTRL = 0.01;              // 控制周期 (100 Hz)
+constexpr double FEEDBACK_DELAY_S = 0.010;    // 融合反馈滞后估计（秒），0 关闭外推
 constexpr int    MPC_PRED_N = 20;             // int(DELAY_TIME / DT_CTRL)，DELAY_TIME=0.2s
 constexpr double J      = 0.016541;
 constexpr double TAU_C  = 0.097297;
@@ -38,6 +39,7 @@ constexpr double MAX_TORQUE_RATE = 40.0;
 constexpr double Q = 5.0;
 constexpr double R = 0.01;
 constexpr double Rd = 0.1;
+constexpr double VELOCITY_RESIDUAL_SCALE = 1.4; // 角速度残差系数，0 关闭
 constexpr int    MAX_ITER = 30;
 // 位置跟踪误差平滑绝对值常数 a（代价 = Q*sqrt(err²+a)；很小正数）
 constexpr double SMOOTH_EPS = 1e-6;
@@ -66,6 +68,9 @@ int main() {
     std::signal(SIGTERM, signalHandler);
 
     printf("=== control_demo (RobotController) ===\n");
+    printf("融合反馈恒速外推: %.1f ms\n", FEEDBACK_DELAY_S * 1000.0);
+    printf("角速度残差系数: %.3f（代价权重 %.3f）\n",
+           VELOCITY_RESIDUAL_SCALE, VELOCITY_RESIDUAL_SCALE * VELOCITY_RESIDUAL_SCALE);
     printf("正弦周期 %.1fs: target_yaw ±30°, pitch_target -10°~+20°, 相位差 90°\n", PERIOD_S);
 
     // 一体化控制封装：通信 + 融合滤波器 + yaw MPC + 后台发送线程
@@ -80,7 +85,9 @@ int main() {
                        /*mpc_loop_period=*/0.01,
                        McuDataPreprocessor::LinearParams{},
                        /*sequence_mode=*/false,
-                       /*smooth_eps=*/SMOOTH_EPS);
+                       /*smooth_eps=*/SMOOTH_EPS,
+                       /*feedback_delay_s=*/FEEDBACK_DELAY_S,
+                       /*velocity_residual_scale=*/VELOCITY_RESIDUAL_SCALE);
 
     // 等待融合数据就绪
     printf("等待融合数据就绪...\n");

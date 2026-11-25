@@ -8,11 +8,14 @@ YawMpcController::YawMpcController(RobotCommunication* comm, double dt_control, 
                                    double J, double tau_c, double b, double tau_d,
                                    double max_torque, double max_torque_rate,
                                    double Q, double R, double Rd, int max_iter,
-                                   double integral_gain, double smooth_eps)
+                                   double integral_gain, double smooth_eps,
+                                   double feedback_delay_s, double velocity_residual_scale)
     : comm_(comm), dt_(dt_control), N_(N), integral_gain_(integral_gain),
+      feedback_delay_(feedback_delay_s),
       // 与实车脚本一致：MPC 的 dt_sim = dt_control（每个控制周期一个仿真子步）
       mpc_(dt_control, dt_control, J, tau_c, b, tau_d,
-           max_torque, max_torque_rate, N, Q, R, Rd, max_iter, smooth_eps)
+           max_torque, max_torque_rate, N, Q, R, Rd, max_iter, smooth_eps,
+           velocity_residual_scale)
 {}
 
 // 单目标 step：目标延迟缓冲（最多 N 个，延迟 dt*N）后求解
@@ -44,16 +47,19 @@ YawMpcController::Result YawMpcController::solve(bool integral_enable) {
     auto fused = comm_->getFused();
     if (!fused.valid) return r;   // 融合未就绪
 
-    const double theta     = fused.yaw_pos;           // yaw 关节解卷绕位置
-    const double omega     = fused.yaw_rate;          // yaw 关节速度（高频）
-    const double theta_imu = fused.imu_yaw_unwrapped; // IMU yaw 解卷绕（world 系）
-
     // 底盘角速度（MCU 原始数据；参考序列外推用）
     double chassis_imu_omega = 0.0;
     {
         auto data = comm_->getLatestData();
         if (data.mcu_valid) chassis_imu_omega = data.mcu_packet.chassis_imu_omega;
     }
+
+    // 将关节和世界系方向外推到同一估计时刻，供初始状态和参考转换共同使用。
+    const auto estimated = feedback_delay_.predict(
+        fused.yaw_pos, fused.yaw_rate, fused.imu_yaw_unwrapped, chassis_imu_omega);
+    const double theta = estimated.theta;
+    const double omega = estimated.omega;
+    const double theta_imu = estimated.imu_yaw;
 
     r.delayed_target = target_buf_.front();
 

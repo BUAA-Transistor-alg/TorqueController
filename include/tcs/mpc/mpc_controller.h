@@ -24,7 +24,7 @@ namespace tcs {
 //
 // 目标函数: 位置跟踪误差用平滑绝对值 sqrt(err² + a)（a = smooth_eps，很小的正数，
 //   默认 1e-6；|err| ≫ √a 时 ≈ |err|，err = 0 附近连续可导），
-//   控制量（R）与力矩变化率（Rd）惩罚保持均方误差。
+//   控制量（R）、力矩变化率（Rd）与角速度惩罚采用平方形式。
 //
 // 求导方式: 动力学/代价函数均模板化（T = double 或 ceres::Jet），
 //   由 Ceres DynamicAutoDiffCostFunction 自动求导（链式法则），
@@ -42,7 +42,8 @@ public:
                   double J, double tau_c, double b, double tau_d,
                   double max_torque, double max_torque_rate,
                   int N, double Q, double R, double Rd, int max_iter,
-                  double smooth_eps = 1e-6);
+                  double smooth_eps = 1e-6,
+                  double velocity_residual_scale = 0.0);
 
     Result step(double theta, double omega, const std::vector<double>& theta_ref);
 
@@ -96,6 +97,7 @@ public:
     }
 
 private:
+    friend class MPCCostFunctor;
     double dt_control_, dt_sim_;
     int    steps_per_control_;
     double J_, tau_c_, b_, tau_d_;
@@ -105,6 +107,7 @@ private:
     double Q_, R_, Rd_;
     int    max_iter_;
     double smooth_eps_;   // 位置误差平滑绝对值常数 a（sqrt(err² + a)），很小的正数
+    double velocity_residual_scale_; // 角速度残差系数，实际代价权重为系数平方
 
     // 上一次最优控制序列（用于热启动）
     std::vector<double> prev_u_seq_;
