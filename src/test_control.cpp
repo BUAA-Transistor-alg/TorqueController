@@ -291,9 +291,9 @@ std::string triple(const std::string& label, double a, double b, double c) {
     return out.str();
 }
 
-std::string pair(const std::string& label, double a, double b) {
+std::string pair(const std::string& label, double a, double b, int precision = 2) {
     std::ostringstream out;
-    out << std::fixed << std::setprecision(2) << label << "  "
+    out << std::fixed << std::setprecision(precision) << label << "  "
         << std::setw(8) << a << " " << std::setw(8) << b;
     return out.str();
 }
@@ -390,6 +390,8 @@ void draw(const Snapshot& s, const Font& font, int width, int height,
     line("MCU columns: joint yaw/pitch, chassis yaw");
     line(s.mcu_count ? triple("MCU cal", s.mcu.yaw_angle * degrees, s.mcu.pitch_angle * degrees,
                              s.mcu.chassis_imu_yaw * degrees) : "MCU calibrated: waiting");
+    line(s.mcu_count ? pair("Chassis rate raw/cal", s.raw_mcu.chassis_imu_omega,
+                           s.mcu.chassis_imu_omega, 4) : "Chassis rate: waiting");
     if (ready) {
         line(triple("Fused  ", s.fused.chassis_yaw * degrees, s.fused.chassis_pitch * degrees,
                     s.fused.chassis_roll * degrees));
