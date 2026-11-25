@@ -14,6 +14,11 @@
 #include <thread>
 #include <csignal>
 #include <atomic>
+#include <algorithm>
+#include <deque>
+#include <limits>
+#include <optional>
+#include <stdexcept>
 
 namespace tcs {
 
@@ -25,6 +30,56 @@ void signalHandler(int) { g_running = false; }
 constexpr double DEG2RAD = M_PI / 180.0;
 constexpr double PERIOD_S = 3.0;              // 正弦周期（秒）
 constexpr double OMEGA = 2.0 * M_PI / PERIOD_S;
+
+class SineCenterWindow {
+public:
+    struct Estimate {
+        double yaw;
+        double chassis_rate;
+    };
+
+    void clear() { samples_.clear(); }
+
+    std::optional<Estimate> update(double t, double yaw, double chassis_rate) {
+        if (!std::isfinite(t) || !std::isfinite(yaw) || !std::isfinite(chassis_rate) ||
+            (!samples_.empty() && t <= samples_.back().t)) {
+            throw std::invalid_argument("invalid sine center sample");
+        }
+        samples_.push_back({t, yaw, chassis_rate});
+        const double cutoff = t - PERIOD_S;
+        while (samples_.size() > 1 && samples_[1].t <= cutoff) {
+            samples_.pop_front();
+        }
+        if (samples_.size() < 2 || samples_.front().t > cutoff) {
+            return std::nullopt;
+        }
+
+        // 按实际时间积分，并插值截取窗口边界，避免循环周期抖动改变统计权重。
+        double yaw_integral = 0.0;
+        double rate_integral = 0.0;
+        for (size_t i = 1; i < samples_.size(); ++i) {
+            const auto& a = samples_[i - 1];
+            const auto& b = samples_[i];
+            const double begin = std::max(a.t, cutoff);
+            const double fraction = (begin - a.t) / (b.t - a.t);
+            const double yaw_begin = a.yaw + fraction * (b.yaw - a.yaw);
+            const double rate_begin = a.chassis_rate +
+                                      fraction * (b.chassis_rate - a.chassis_rate);
+            const double dt = b.t - begin;
+            yaw_integral += 0.5 * (yaw_begin + b.yaw) * dt;
+            rate_integral += 0.5 * (rate_begin + b.chassis_rate) * dt;
+        }
+        return Estimate{yaw_integral / PERIOD_S, rate_integral / PERIOD_S};
+    }
+
+private:
+    struct Sample {
+        double t;
+        double yaw;
+        double chassis_rate;
+    };
+    std::deque<Sample> samples_;
+};
 
 // ── 参数（与 pygame_control_mpc.py 一致）──
 constexpr double DT_CTRL = 0.01;              // 控制周期 (100 Hz)
@@ -72,6 +127,10 @@ int main() {
     printf("角速度残差系数: %.3f（代价权重 %.3f）\n",
            VELOCITY_RESIDUAL_SCALE, VELOCITY_RESIDUAL_SCALE * VELOCITY_RESIDUAL_SCALE);
     printf("正弦周期 %.1fs: target_yaw ±30°, pitch_target -10°~+20°, 相位差 90°\n", PERIOD_S);
+    printf("yaw_world/sine_center 单位为度，chassis_rate/center_chassis_rate 单位为 rad/s；\n"
+           "sine_center 为最近 %.1fs 世界系连续 yaw 的时间平均值，目标中心为 0°；\n"
+           "center_chassis_rate 为同窗口平均底盘角速度，center_t 为窗口中点；"
+           "窗口完整后 center_valid=1。\n", PERIOD_S);
 
     // 一体化控制封装：通信 + 融合滤波器 + yaw MPC + 后台发送线程
     // integral_gain: yaw 力矩积分补偿比例系数（默认 0.01）
@@ -100,6 +159,7 @@ int main() {
 
     auto t0 = std::chrono::steady_clock::now();
     int loop = 0;
+    SineCenterWindow center_window;
     while (g_running) {
         auto start = std::chrono::steady_clock::now();
         double t = std::chrono::duration<double>(start - t0).count();
@@ -110,13 +170,30 @@ int main() {
         rc.set(/*auto_aim_enable=*/true, /*yaw_torque_only_mode=*/false,
                yaw, pitch, /*fire=*/false, /*integral_enable=*/false);
 
+        auto st = rc.getState();
+        std::optional<SineCenterWindow::Estimate> center;
+        if (st.fused.valid && st.mcu.valid) {
+            center = center_window.update(t, st.fused.imu_yaw_unwrapped,
+                                          st.mcu.chassis_imu_omega);
+        } else {
+            center_window.clear();
+        }
+
         // 每 0.1s 打印一次
         if (++loop % 10 == 0) {
-            auto st = rc.getState();
+            const double unavailable = std::numeric_limits<double>::quiet_NaN();
             printf("[t=%6.2fs] target_yaw=%+7.2f° pitch=%+6.2f° | "
-                   "yaw_pos=%+.3f yaw_rate=%+.3f torque=%+.4f | fused=%d | temperature=%d\n",
+                   "yaw_pos=%+.3f yaw_rate=%+.3f torque=%+.4f | "
+                   "yaw_world=%+.2f° chassis_rate=%+.3f mcu=%d | "
+                   "sine_center=%+.3f° center_chassis_rate=%+.3f "
+                   "center_t=%.2fs center_valid=%d | fused=%d | temperature=%d\n",
                    t, yaw / DEG2RAD, pitch / DEG2RAD,
                    st.fused.yaw_pos, st.fused.yaw_rate, st.mpc.yaw_torque,
+                   std::remainder(st.fused.imu_yaw_unwrapped, 2.0 * M_PI) / DEG2RAD,
+                   st.mcu.chassis_imu_omega, (int)st.mcu.valid,
+                   center ? std::remainder(center->yaw, 2.0 * M_PI) / DEG2RAD : unavailable,
+                   center ? center->chassis_rate : unavailable,
+                   center ? t - PERIOD_S / 2.0 : unavailable, (int)center.has_value(),
                    (int)st.fused.valid, st.mcu.yaw_temperature);
         }
 
