@@ -79,6 +79,7 @@ RobotController::State RobotController::getState() {
 
     // ── MPC 状态（含参考/预测序列与积分值）──
     auto m = mcu_mpc_.state();
+    st.mpc.stamp               = m.stamp;
     st.mpc.yaw_target_angle    = m.yaw_target_angle;
     st.mpc.yaw_target_velocity = m.yaw_target_velocity;
     st.mpc.yaw_torque          = m.yaw_torque;
@@ -92,28 +93,40 @@ RobotController::State RobotController::getState() {
     return st;
 }
 
+void RobotController::setControlRecordingEnabled(bool enabled) {
+    mcu_mpc_.setControlRecordingEnabled(enabled);
+}
+
+ControlRecordBatch RobotController::takeControlRecords() {
+    return mcu_mpc_.takeControlRecords();
+}
+
 void RobotController::set(bool auto_aim_enable, bool yaw_torque_only_mode,
                           double target_yaw, double pitch_target_angle, bool fire,
-                          bool integral_enable) {
+                          bool integral_enable,
+                          std::optional<std::uint64_t> frame_id,
+                          std::optional<std::uint64_t> plan_id) {
     if (sequence_mode_) {
         throw std::runtime_error("RobotController: SEQUENCE mode selected, "
                                  "use sequence set() instead of single set()");
     }
     mcu_mpc_.set(auto_aim_enable, yaw_torque_only_mode, target_yaw,
-                 pitch_target_angle, fire, integral_enable);
+                 pitch_target_angle, fire, integral_enable, frame_id, plan_id);
 }
 
 void RobotController::set(bool auto_aim_enable, bool yaw_torque_only_mode,
                           const std::vector<double>& target_yaw_seq,
                           const std::vector<double>& pitch_seq,
                           const std::vector<bool>& fire_seq,
-                          bool integral_enable) {
+                          bool integral_enable,
+                          std::optional<std::uint64_t> frame_id,
+                          std::optional<std::uint64_t> plan_id) {
     if (!sequence_mode_) {
         throw std::runtime_error("RobotController: SINGLE mode selected, "
                                  "use single set() instead of sequence set()");
     }
     mcu_mpc_.set(auto_aim_enable, yaw_torque_only_mode,
-                 target_yaw_seq, pitch_seq, fire_seq, integral_enable);
+                 target_yaw_seq, pitch_seq, fire_seq, integral_enable, frame_id, plan_id);
 }
 
 } // namespace tcs

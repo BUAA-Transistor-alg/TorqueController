@@ -3,6 +3,8 @@
 #include <chrono>
 #include <cmath>
 #include <algorithm>
+#include <stdexcept>
+#include <limits>
 
 namespace tcs {
 
@@ -40,7 +42,11 @@ void McuMpcController::stop() {
 
 void McuMpcController::set(bool auto_aim_enable, bool yaw_torque_only_mode,
                            double target_yaw, double pitch_target_angle, bool fire,
-                           bool integral_enable) {
+                           bool integral_enable,
+                           std::optional<std::uint64_t> frame_id,
+                           std::optional<std::uint64_t> plan_id) {
+    if (frame_id.has_value() != plan_id.has_value())
+        throw std::invalid_argument("McuMpcController::set: frame_id 和 plan_id 必须同时提供或同时省略");
     // target_yaw 自动转换到与 imu_yaw_unwrapped 角度差最小的等效角：
     //   target_adj = imu_yaw + remainder(target_yaw − imu_yaw, 2π)
     //   - |target_adj − imu_yaw_unwrapped| ≤ π（角度差最小）
@@ -54,6 +60,9 @@ void McuMpcController::set(bool auto_aim_enable, bool yaw_torque_only_mode,
     double target_adj = imu_yaw + std::remainder(target_yaw - imu_yaw, 2.0 * M_PI);
 
     std::lock_guard<std::mutex> lock(set_mtx_);
+    frame_id_ = frame_id;
+    plan_id_ = plan_id;
+    reference_index_.reset();
     auto_aim_enable_      = auto_aim_enable;
     yaw_torque_only_mode_ = yaw_torque_only_mode;
     integral_enable_      = integral_enable;
@@ -74,7 +83,13 @@ void McuMpcController::set(bool auto_aim_enable, bool yaw_torque_only_mode,
                            const std::vector<double>& target_yaw_seq,
                            const std::vector<double>& pitch_seq,
                            const std::vector<bool>& fire_seq,
-                           bool integral_enable) {
+                           bool integral_enable,
+                           std::optional<std::uint64_t> frame_id,
+                           std::optional<std::uint64_t> plan_id) {
+    if (frame_id.has_value() != plan_id.has_value())
+        throw std::invalid_argument("McuMpcController::set: frame_id 和 plan_id 必须同时提供或同时省略");
+    if (target_yaw_seq.size() > std::numeric_limits<std::uint32_t>::max())
+        throw std::length_error("McuMpcController::set: yaw 序列长度超过参考下标范围");
     // imu_yaw（第一个 target 值的 wrap 基准）
     double imu_yaw = 0.0;
     if (comm_) {
@@ -83,6 +98,9 @@ void McuMpcController::set(bool auto_aim_enable, bool yaw_torque_only_mode,
     }
 
     std::lock_guard<std::mutex> lock(set_mtx_);
+    frame_id_ = frame_id;
+    plan_id_ = plan_id;
+    reference_index_.reset();
     auto_aim_enable_      = auto_aim_enable;
     yaw_torque_only_mode_ = yaw_torque_only_mode;
     integral_enable_      = integral_enable;
@@ -104,10 +122,30 @@ McuMpcController::State McuMpcController::state() const {
     return last_state_;
 }
 
+void McuMpcController::setControlRecordingEnabled(bool enabled) {
+    std::lock_guard<std::mutex> lock(control_records_mtx_);
+    control_recording_enabled_.store(enabled, std::memory_order_release);
+}
+
+ControlRecordBatch McuMpcController::takeControlRecords() {
+    ControlRecordBatch batch;
+    {
+        std::lock_guard<std::mutex> lock(control_records_mtx_);
+        batch.records.swap(control_records_);
+        batch.dropped_records = dropped_control_records_;
+        dropped_control_records_ = 0;
+    }
+    return batch;
+}
+
 void McuMpcController::loop() {
     while (running_) {
         // 循环开始处获取本次循环时间基准
         auto start = std::chrono::steady_clock::now();
+        if (next_control_tick_id_ == std::numeric_limits<std::uint64_t>::max())
+            throw std::overflow_error("McuMpcController: 控制周期编号已经耗尽");
+        ControlStamp stamp;
+        stamp.control_tick_id = next_control_tick_id_++;
 
         // 取最新设置的发送参数与 mpc 目标；若序列模式非空则优先消费序列
         bool aa, mode, fire, integral_enable;
@@ -115,6 +153,8 @@ void McuMpcController::loop() {
         std::vector<double> seq_buf;   // 非空表示使用整序列 step
         {
             std::lock_guard<std::mutex> lock(set_mtx_);
+            stamp.frame_id = frame_id_;
+            stamp.plan_id = plan_id_;
             aa    = auto_aim_enable_;
             mode  = yaw_torque_only_mode_;
             integral_enable = integral_enable_;
@@ -126,6 +166,7 @@ void McuMpcController::loop() {
             // 某序列用完（空）时对应成员保持当前值（回原模式），其余通道继续用序列。
             // target_yaw 序列决定本次是否使用整序列 step。
             if (!target_yaw_seq_.empty()) {
+                reference_index_ = reference_index_ ? *reference_index_ + 1 : 0;
                 seq_buf.assign(target_yaw_seq_.begin(), target_yaw_seq_.end());
                 target_yaw_ = target_yaw_seq_.front();
                 target_yaw_seq_.pop_front();
@@ -141,6 +182,7 @@ void McuMpcController::loop() {
                 fire_seq_.pop_front();
                 fire = fire_;
             }
+            stamp.reference_index = reference_index_;
         }
 
         // mpc 求解（序列模式传整个目标缓冲；内部读融合状态）
@@ -156,11 +198,15 @@ void McuMpcController::loop() {
         pkt.yaw_target_angle   = res.yaw_target_angle;
         pkt.yaw_target_velocity = static_cast<float>(res.yaw_target_velocity);
         pkt.yaw_torque         = static_cast<float>(res.yaw_torque);
-        if (comm_) comm_->sendToMcu(pkt);
+        const auto command_submitted_at = std::chrono::steady_clock::now();
+        std::optional<bool> command_send_succeeded;
+        if (comm_) command_send_succeeded = comm_->sendToMcu(pkt);
+        const auto finished_at = std::chrono::steady_clock::now();
 
         // 缓存最新结果（供显示）
         {
             std::lock_guard<std::mutex> lock(state_mtx_);
+            last_state_.stamp               = stamp;
             last_state_.yaw_target_angle    = res.yaw_target_angle;
             last_state_.yaw_target_velocity = res.yaw_target_velocity;
             last_state_.yaw_torque          = res.yaw_torque;
@@ -170,6 +216,35 @@ void McuMpcController::loop() {
             last_state_.pred_sequence       = res.pred_sequence;
             last_state_.loop_fps            = fps_counter_.fps();
             last_state_.ticks_since_set     = ticks_since_set_.load();
+        }
+
+        if (control_recording_enabled_.load(std::memory_order_acquire)) {
+            ControlRecord record;
+            record.stamp = stamp;
+            record.started_at = start;
+            record.command_submitted_at = command_submitted_at;
+            record.finished_at = finished_at;
+            record.yaw_target_angle = pkt.yaw_target_angle;
+            record.yaw_target_velocity = pkt.yaw_target_velocity;
+            record.yaw_torque = pkt.yaw_torque;
+            record.pitch_target_angle = pkt.pitch_target_angle;
+            record.integral = mpc_.integral();
+            record.integral_enabled = integral_enable;
+            record.auto_aim_enable = aa;
+            record.yaw_torque_only_mode = mode;
+            record.fire = fire;
+            if (!res.ref_sequence.empty()) record.reference_position = res.ref_sequence.front();
+            record.command_send_succeeded = command_send_succeeded;
+            std::lock_guard<std::mutex> lock(control_records_mtx_);
+            if (control_recording_enabled_.load(std::memory_order_acquire)) {
+                if (control_records_.size() == kControlRecordCapacity) {
+                    if (dropped_control_records_ == std::numeric_limits<std::uint64_t>::max())
+                        throw std::overflow_error("McuMpcController: 调试记录溢出计数已经耗尽");
+                    control_records_.pop_front();
+                    ++dropped_control_records_;
+                }
+                control_records_.push_back(std::move(record));
+            }
         }
 
         // 循环结束处：等待到 start + loop_period（默认 10ms = 100Hz），

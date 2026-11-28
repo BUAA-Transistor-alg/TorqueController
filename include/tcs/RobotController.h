@@ -3,6 +3,7 @@
 
 #include <vector>
 #include <cstdint>
+#include <optional>
 #include <stdexcept>
 #include "tcs/communication/Communications.hpp"
 #include "tcs/mpc/mcu_mpc_controller.h"
@@ -74,6 +75,8 @@ public:
 
     // MPC 状态
     struct MpcData {
+        /// 与本次 MPC 结果对应的参考来源和实际控制周期编号。
+        ControlStamp stamp;
         double yaw_target_angle = 0.0;      // 最新预测位置
         double yaw_target_velocity = 0.0;   // 最新预测速度
         double yaw_torque = 0.0;            // 最新控制力矩
@@ -122,21 +125,30 @@ public:
     // 统一获取：mcu/imu 原始 + 融合输出 + mpc 状态（含参考/预测序列与积分值）
     State getState();
 
-    // 直通 McuMpcController::set（单目标模式；后台线程按 mpc_loop_period 周期求解并发送 MCU）
-    // integral_enable：本步是否启用 yaw 力矩积分补偿（必须传参；true 时
-    //   yaw_torque 加积分后限幅，false 时积分清空为 0）。
-    // 序列模式下调用本接口抛出 std::runtime_error
-    void set(bool auto_aim_enable, bool yaw_torque_only_mode, double target_yaw,
-             double pitch_target_angle, bool fire, bool integral_enable);
+    /// 开启或关闭单 yaw 的逐周期调试记录，默认关闭；保留尚未取出的记录。
+    void setControlRecordingEnabled(bool enabled);
 
-    // 序列模式 set（直通 McuMpcController 序列版 set）
-    // integral_enable：本次序列执行期间是否启用 yaw 力矩积分补偿（必须传参）。
-    // 单目标模式下调用本接口抛出 std::runtime_error
+    /// 取出当前全部控制调试记录及溢出数量，内部队列随之清空；不改变 getState()。
+    ControlRecordBatch takeControlRecords();
+
+    /// 设置单目标参考及积分补偿开关；后台线程按 mpc_loop_period 求解并发送。
+    /// frame_id、plan_id 必须同时提供或同时省略；编号与本次参考共同保存。
+    /// 序列模式下调用本接口抛出 std::runtime_error。
+    void set(bool auto_aim_enable, bool yaw_torque_only_mode, double target_yaw,
+             double pitch_target_angle, bool fire, bool integral_enable,
+             std::optional<std::uint64_t> frame_id = std::nullopt,
+             std::optional<std::uint64_t> plan_id = std::nullopt);
+
+    /// 设置参考序列及积分补偿开关，转发到 McuMpcController。
+    /// frame_id、plan_id 必须同时提供或同时省略；编号与本次序列共同保存。
+    /// 单目标模式下调用本接口抛出 std::runtime_error。
     void set(bool auto_aim_enable, bool yaw_torque_only_mode,
              const std::vector<double>& target_yaw_seq,
              const std::vector<double>& pitch_seq,
              const std::vector<bool>& fire_seq,
-             bool integral_enable);
+             bool integral_enable,
+             std::optional<std::uint64_t> frame_id = std::nullopt,
+             std::optional<std::uint64_t> plan_id = std::nullopt);
 
     Mode mode() const { return sequence_mode_ ? Mode::SEQUENCE : Mode::SINGLE; }
 
