@@ -12,6 +12,11 @@
 #include "tcs/communication/McuDataPreprocessor.h"
 #include "tcs/communication/FusionFilter.h"
 #include "tcs/communication/ImuMountCompensation.h"
+#include "tcs/communication/McuDiagnostics.h"
+#include "tcs/communication/ImuDiagnostics.h"
+#include <limits>
+#include <optional>
+#include <stdexcept>
 #include <utility>
 #include <string>
 #include <mutex>
@@ -72,8 +77,10 @@ public:
     struct LatestData {
         bool               imu_valid = false;
         imu::ReceivePacket imu_packet{};
+        std::optional<ImuReceiveSample> imu_sample;
         bool               mcu_valid = false;
         mcu::ReceivePacket mcu_packet{};
+        std::optional<McuReceiveSample> mcu_sample;
     };
 
     // 融合权重使用 YawChassisFusion 构造默认值（imu_weight=1.0）
@@ -101,6 +108,7 @@ public:
             if (has_imu_data_) {
                 data.imu_packet = latest_imu_packet_;
                 data.imu_valid  = true;
+                data.imu_sample = latest_imu_sample_;
             }
         }
         {
@@ -108,9 +116,46 @@ public:
             if (has_mcu_data_) {
                 data.mcu_packet = latest_mcu_packet_;   // 已预处理
                 data.mcu_valid  = true;
+                data.mcu_sample = latest_mcu_sample_;
             }
         }
         return data;
+    }
+
+    /// 诊断开关只控制接收队列，样本编号始终随有效报文递增。
+    void setImuRecordingEnabled(bool enabled) {
+        std::lock_guard<std::mutex> lock(imu_mutex_);
+        if (enabled && !imu_recording_enabled_ && latest_imu_sample_ &&
+            (imu_samples_.empty() || imu_samples_.back().sample_id != latest_imu_sample_->sample_id))
+            appendImuSampleLocked(*latest_imu_sample_);
+        imu_recording_enabled_ = enabled;
+    }
+
+    ImuReceiveBatch takeImuRecords() {
+        std::lock_guard<std::mutex> lock(imu_mutex_);
+        ImuReceiveBatch batch;
+        batch.samples.swap(imu_samples_);
+        batch.dropped_samples = dropped_imu_samples_;
+        dropped_imu_samples_ = 0;
+        return batch;
+    }
+
+    /// MCU 与 IMU 的采集开关分别控制。
+    void setMcuRecordingEnabled(bool enabled) {
+        std::lock_guard<std::mutex> lock(mcu_mutex_);
+        if (enabled && !mcu_recording_enabled_ && latest_mcu_sample_ &&
+            (mcu_samples_.empty() || mcu_samples_.back().sample_id != latest_mcu_sample_->sample_id))
+            appendMcuSampleLocked(*latest_mcu_sample_);
+        mcu_recording_enabled_ = enabled;
+    }
+
+    McuReceiveBatch takeMcuRecords() {
+        std::lock_guard<std::mutex> lock(mcu_mutex_);
+        McuReceiveBatch batch;
+        batch.samples.swap(mcu_samples_);
+        batch.dropped_samples = dropped_mcu_samples_;
+        dropped_mcu_samples_ = 0;
+        return batch;
     }
 
     // 发送 MCU 数据（发送前预处理）
@@ -146,24 +191,50 @@ public:
     }
 
 private:
-    // ── 回调：存储安装补偿后的 IMU 数据并更新融合滤波器 ──
+    void appendImuSampleLocked(const ImuReceiveSample& sample) {
+        if (imu_samples_.size() >= kImuSampleCapacity) {
+            ++dropped_imu_samples_;
+            throw std::overflow_error("IMU 原始诊断接收队列已满");
+        }
+        imu_samples_.push_back(sample);
+    }
+
+    void appendMcuSampleLocked(const McuReceiveSample& sample) {
+        if (mcu_samples_.size() >= kMcuSampleCapacity) {
+            ++dropped_mcu_samples_;
+            throw std::overflow_error("MCU 原始诊断接收队列已满");
+        }
+        mcu_samples_.push_back(sample);
+    }
+
+    // 原始报文与安装补偿后的数据使用相同的接收编号和时间。
     void onImuReceive(const imu::ReceivePacket& packet) {
+        const auto received_at = std::chrono::steady_clock::now();
+        const auto processed = compensateImuMount(packet);
         {
             std::lock_guard<std::mutex> lock(imu_mutex_);
-            latest_imu_packet_ = packet;
+            if (next_imu_sample_id_ == std::numeric_limits<std::uint64_t>::max())
+                throw std::overflow_error("IMU 接收样本编号已经耗尽");
+            latest_imu_sample_ = ImuReceiveSample{next_imu_sample_id_++, received_at, packet, processed};
+            latest_imu_packet_ = processed;
             has_imu_data_      = true;
+            if (imu_recording_enabled_) appendImuSampleLocked(*latest_imu_sample_);
         }
-        fusion_.onImu(packet.euler_yaw, packet.euler_pitch, packet.euler_roll,
-                      packet.gx, packet.gy, packet.gz);
+        fusion_.onImu(processed.euler_yaw, processed.euler_pitch, processed.euler_roll,
+                      processed.gx, processed.gy, processed.gz);
     }
 
     void onMcuReceive(const mcu::ReceivePacket& packet) {
-        // 预处理后直接存储（latest_mcu_packet_ 不再存原始数据）
+        const auto received_at = std::chrono::steady_clock::now();
         mcu::ReceivePacket processed = preprocessor_.processReceive(packet);
         {
             std::lock_guard<std::mutex> lock(mcu_mutex_);
+            if (next_mcu_sample_id_ == std::numeric_limits<std::uint64_t>::max())
+                throw std::overflow_error("MCU 接收样本编号已经耗尽");
+            latest_mcu_sample_ = McuReceiveSample{next_mcu_sample_id_++, received_at, packet};
             latest_mcu_packet_ = processed;
             has_mcu_data_      = true;
+            if (mcu_recording_enabled_) appendMcuSampleLocked(*latest_mcu_sample_);
         }
         // 喂融合滤波器的数据同样为预处理后的（与 latest_mcu_packet_ 语义一致）
         fusion_.onMcu(processed.yaw_angle, processed.yaw_omega, processed.pitch_angle,
@@ -173,15 +244,27 @@ private:
     // ── 成员变量 ──
     McuDataPreprocessor  preprocessor_;   // MCU 数据线性标定预处理
     McuCommunication mcu_serial_;
-    ImuCommunication imu_serial_;
+    ImuSerialProtocol imu_serial_;
 
     std::mutex         imu_mutex_;
     imu::ReceivePacket latest_imu_packet_{};
     bool               has_imu_data_ = false;
+    static constexpr std::size_t kImuSampleCapacity = 4096;
+    std::optional<ImuReceiveSample> latest_imu_sample_;
+    std::uint64_t next_imu_sample_id_ = 0;
+    bool imu_recording_enabled_ = false;
+    std::deque<ImuReceiveSample> imu_samples_;
+    std::uint64_t dropped_imu_samples_ = 0;
 
     std::mutex         mcu_mutex_;
     mcu::ReceivePacket latest_mcu_packet_{};
     bool               has_mcu_data_ = false;
+    static constexpr std::size_t kMcuSampleCapacity = 4096;
+    std::optional<McuReceiveSample> latest_mcu_sample_;
+    std::uint64_t next_mcu_sample_id_ = 0;
+    bool mcu_recording_enabled_ = false;
+    std::deque<McuReceiveSample> mcu_samples_;
+    std::uint64_t dropped_mcu_samples_ = 0;
 
     YawChassisFusion   fusion_;   // IMU 高频 + MCU 低频融合滤波器
 };

@@ -39,15 +39,17 @@ public:
         float  chassis_imu_omega = 0.0f;
         uint8_t mark = 0, color = 0, auto_aim_switch = 0, yaw_temperature = 0;
         uint8_t fold = 0;                  // 0 表示云台折叠，1 表示云台升起；数据有效性由 valid 表示
+        std::optional<McuReceiveSample> diagnostic_sample;
     };
 
-    // IMU 原始数据
+    // IMU 安装补偿数据；diagnostic_sample 同时保存原始接收包。
     struct ImuData {
         bool   valid = false;
         float  gx = 0.0f, gy = 0.0f, gz = 0.0f;
         float  ax = 0.0f, ay = 0.0f, az = 0.0f;
         double euler_yaw = 0.0, euler_pitch = 0.0, euler_roll = 0.0;
         uint32_t dt_one_tenth_ms = 0;
+        std::optional<ImuReceiveSample> diagnostic_sample;
     };
 
     // FusionFilter 输出（YawChassisFusion::Output）
@@ -130,6 +132,14 @@ public:
 
     /// 取出当前全部控制调试记录及溢出数量，内部队列随之清空；不改变 getState()。
     ControlRecordBatch takeControlRecords();
+
+    /// 原始 MCU 诊断采集独立于融合与 MPC。
+    void setMcuRecordingEnabled(bool enabled);
+    McuReceiveBatch takeMcuRecords();
+
+    /// IMU 诊断采集保留逐包原始数据和安装补偿数据。
+    void setImuRecordingEnabled(bool enabled);
+    ImuReceiveBatch takeImuRecords();
 
     /// 设置单目标参考及积分补偿开关；后台线程按 mpc_loop_period 求解并发送。
     /// frame_id、plan_id 必须同时提供或同时省略；编号与本次参考共同保存。

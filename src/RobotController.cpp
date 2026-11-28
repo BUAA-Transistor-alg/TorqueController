@@ -44,6 +44,7 @@ RobotController::State RobotController::getState() {
         st.mcu.auto_aim_switch  = m.auto_aim_switch;
         st.mcu.yaw_temperature  = m.yaw_temperature;
         st.mcu.fold             = m.fold;
+        st.mcu.diagnostic_sample = raw.mcu_sample;
     }
     if (raw.imu_valid) {
         const auto& im = raw.imu_packet;
@@ -54,6 +55,7 @@ RobotController::State RobotController::getState() {
         st.imu.euler_pitch = im.euler_pitch;
         st.imu.euler_roll  = im.euler_roll;
         st.imu.dt_one_tenth_ms = im.dt_one_tenth_ms;
+        st.imu.diagnostic_sample = raw.imu_sample;
     }
 
     // ── FusionFilter 输出 ──
@@ -99,6 +101,22 @@ void RobotController::setControlRecordingEnabled(bool enabled) {
 
 ControlRecordBatch RobotController::takeControlRecords() {
     return mcu_mpc_.takeControlRecords();
+}
+
+void RobotController::setMcuRecordingEnabled(bool enabled) {
+    comm_.setMcuRecordingEnabled(enabled);
+}
+
+McuReceiveBatch RobotController::takeMcuRecords() {
+    return comm_.takeMcuRecords();
+}
+
+void RobotController::setImuRecordingEnabled(bool enabled) {
+    comm_.setImuRecordingEnabled(enabled);
+}
+
+ImuReceiveBatch RobotController::takeImuRecords() {
+    return comm_.takeImuRecords();
 }
 
 void RobotController::set(bool auto_aim_enable, bool yaw_torque_only_mode,
